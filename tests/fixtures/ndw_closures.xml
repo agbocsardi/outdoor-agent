@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mc:messageContainer xmlns:mc="http://datex2.eu/schema/3/messageContainer" xmlns:sit="http://datex2.eu/schema/3/situation" xmlns:com="http://datex2.eu/schema/3/common" xmlns:loc="http://datex2.eu/schema/3/locationReferencing" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" modelBaseVersion="3">
+  <mc:payload xsi:type="sit:SituationPublication" modelBaseVersion="3">
+    <com:publicationTime>2026-10-09T10:00:00Z</com:publicationTime>
+    <sit:situation id="bike-closure">
+      <sit:situationVersionTime>2026-10-09T09:00:00Z</sit:situationVersionTime>
+      <sit:situationRecord xsi:type="sit:CyclewayOrFootpathOrWalkwayManagement" id="bike-closure-record">
+        <sit:validity><com:validityTimeSpecification><com:overallStartTime>2026-10-10T00:00:00Z</com:overallStartTime><com:overallEndTime>2026-10-12T00:00:00Z</com:overallEndTime></com:validityTimeSpecification></sit:validity>
+        <sit:source><com:sourceName><com:values><com:value>Test municipality</com:value></com:values></com:sourceName></sit:source>
+        <sit:roadOrCarriagewayOrLaneManagementType>cyclewayClosure</sit:roadOrCarriagewayOrLaneManagementType>
+        <sit:locationReference xsi:type="loc:ItineraryByIndexedLocations"><loc:locationContainedInItinerary><loc:location xsi:type="loc:LinearLocation"><loc:gmlLineString srsName="WGS 84"><loc:posList>52.1000 5.1000 52.1010 5.1000</loc:posList></loc:gmlLineString></loc:location></loc:locationContainedInItinerary></sit:locationReference>
+      </sit:situationRecord>
+    </sit:situation>
+    <sit:situation id="road-only">
+      <sit:situationVersionTime>2026-10-09T09:00:00Z</sit:situationVersionTime>
+      <sit:situationRecord xsi:type="sit:RoadOrCarriagewayOrLaneManagement" id="road-only-record">
+        <sit:validity><com:validityTimeSpecification><com:overallStartTime>2026-10-10T00:00:00Z</com:overallStartTime><com:overallEndTime>2026-10-12T00:00:00Z</com:overallEndTime></com:validityTimeSpecification></sit:validity>
+        <sit:roadOrCarriagewayOrLaneManagementType>carriagewayClosures</sit:roadOrCarriagewayOrLaneManagementType>
+        <sit:locationReference xsi:type="loc:ItineraryByIndexedLocations"><loc:locationContainedInItinerary><loc:location xsi:type="loc:LinearLocation"><loc:gmlLineString srsName="WGS 84"><loc:posList>52.1000 5.1000 52.1010 5.1000</loc:posList></loc:gmlLineString></loc:location></loc:locationContainedInItinerary></sit:locationReference>
+      </sit:situationRecord>
+    </sit:situation>
+    <sit:situation id="alert-c-unresolved">
+      <sit:situationRecord xsi:type="sit:CyclewayClosure" id="alert-c-record">
+        <sit:roadOrCarriagewayOrLaneManagementType>carriagewayClosures</sit:roadOrCarriagewayOrLaneManagementType>
+        <sit:locationReference xsi:type="loc:ItineraryByIndexedLocations"><loc:locationContainedInItinerary><loc:location xsi:type="loc:SingleRoadLinearLocation"><loc:alertCLinear xsi:type="loc:AlertCMethod4Linear"/></loc:location></loc:locationContainedInItinerary></sit:locationReference>
+      </sit:situationRecord>
+    </sit:situation>
+    <sit:situation id="expired-roadwork">
+      <sit:situationRecord xsi:type="sit:RoadOrCarriagewayOrLaneManagement" id="expired-record">
+        <sit:validity><com:validityTimeSpecification><com:overallStartTime>2026-10-01T00:00:00Z</com:overallStartTime><com:overallEndTime>2026-10-02T00:00:00Z</com:overallEndTime></com:validityTimeSpecification></sit:validity>
+        <sit:roadOrCarriagewayOrLaneManagementType>cyclewayClosure</sit:roadOrCarriagewayOrLaneManagementType>
+        <sit:locationReference xsi:type="loc:ItineraryByIndexedLocations"><loc:locationContainedInItinerary><loc:location xsi:type="loc:LinearLocation"><loc:gmlLineString srsName="WGS 84"><loc:posList>52.1000 5.1000 52.1010 5.1000</loc:posList></loc:gmlLineString></loc:location></loc:locationContainedInItinerary></sit:locationReference>
+      </sit:situationRecord>
+    </sit:situation>
+  </mc:payload>
+</mc:messageContainer>

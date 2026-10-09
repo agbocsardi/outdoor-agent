@@ -1,6 +1,6 @@
 [project]
 name = "outdoor-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local, evidence-aware outdoor route tools for agents"
 readme = "README.md"
 license = "MIT"
@@ -55,6 +55,7 @@ strict = true
 testpaths = ["tests"]
 addopts = "-ra"
 asyncio_mode = "auto"
+markers = ["live: opt-in public read-only provider integration; disabled unless OUTDOOR_AGENT_LIVE_TESTS=1"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["typer.Option"]

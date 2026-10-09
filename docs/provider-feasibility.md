@@ -105,3 +105,22 @@ These newly reviewed partner/MCP docs do not change the initial decision: implem
 local GPX handling now; keep account writes unavailable until a lawful documented
 integration is configured, tested, and approved by the user. The advertised partner
 route push must not be conflated with physical watch delivery.
+
+
+### Implementation follow-up — 2026-10-09
+
+The earlier Overpass failure above describes the initial Phase 0 probe. The documented
+POST request now works: public Nominatim geocoding and Overpass route geometry returned
+real OSM relations. See [discovery evidence](discovery.md) and [CLI demo](cli-demo.md).
+Both complete live NDW feeds were fetched and parsed through the CLI; direct GML works,
+while unsupported references remain explicit coverage gaps. Neither endpoint availability
+nor this one-day sample establishes an update SLA or complete trail coverage.
+
+The current RWGPS OpenAPI document at `https://ridewithgps.com/api/v1/doc` defines
+`x-rwgps-api-key` and `x-rwgps-auth-token` **headers**, route metadata at
+`/api/v1/routes/{id}.json`, permitted export at `/api/v1/routes/{id}.{format}`, and
+the current-user read at `/api/v1/users/current`. The implementation follows these
+contracts and validates offline success/schema/auth/permission failures. An actual
+credentialed read, export entitlement, public catalog search and account write have
+not been verified. Google Nearby Search is likewise contract-tested with explicit
+opt-in and a hard actual-send quota, without a paid live request.

@@ -10,6 +10,18 @@
       "title": "Event Id",
       "type": "string"
     },
+    "severity": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Severity"
+    },
     "classification": {
       "enum": [
         "known_conflict",

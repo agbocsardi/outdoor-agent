@@ -1,17 +1,10 @@
 # outdoor-agent
 
-Local outdoor-route tools for OpenClaw and Ubuntu, built with Python 3.12+ and **uv**.
-This initial milestone implements **Phase 0 feasibility and Phase 1**, not the full v1 workflow.
-It makes no provider requests or account writes at runtime.
+`outdoor-agent` 0.2.0 is a local, JSON-first command-line tool for inspecting and saving GPX routes, discovering mapped OpenStreetMap routes, assessing public NDW closure feeds, enriching routes with opt-in Google Places data, and preparing a local GPX handoff for the COROS app. Python environments and commands use **uv**.
 
-Working commands: `inspect`, `import-gpx`, `providers`, `doctor`, `schema`, and `--version`.
-`search`, `check-closures`, `places`, provider `export`, and `deliver` are explicit future-phase
-command targets: they return `CAPABILITY_NOT_IMPLEMENTED` with exit code 5. Neither
-`--dry-run` nor `--confirm` enables an unverified delivery operation.
+## Install
 
-## Install and try it
-
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then clone and install the locked project:
 
 ```bash
 git clone https://github.com/agbocsardi/outdoor-agent.git
@@ -19,73 +12,135 @@ cd outdoor-agent
 uv python install 3.12
 uv sync --frozen --dev
 uv run outdoor-agent --help
+uv run outdoor-agent --version
 uv run outdoor-agent doctor --json
 uv run outdoor-agent providers --json
-uv run outdoor-agent inspect tests/fixtures/example.gpx --activity gravel --json
-uv run outdoor-agent import-gpx tests/fixtures/example.gpx --activity gravel --json
-uv run outdoor-agent schema --name inspection --json
+uv run outdoor-agent schema --name all --json
 ```
 
-The example GPX is **synthetic test data**, not a recommendation or a verified real route.
-For your own legitimately obtained route:
+No `.env` file is loaded automatically. Set environment variables in the process manager or shell, or use `~/.config/outdoor-agent/config.toml` with restrictive permissions. `--config ./config.toml` selects a different TOML file.
+
+## Discover and save routes
+
+Search returns mapped OSM route relations as `official_trail`, with OSM attribution and relation links. OSM route relations are not community reviews or proof that a route was ridden. Public community-route search is not available: `--source-type community` returns the typed `COMMUNITY_DISCOVERY_UNAVAILABLE` error (exit 5). The default `all` search can return OSM results and reports this community-catalog gap as a partial result. Results with incomplete member geometry, stale cache data, or Overpass truncation also carry warnings.
 
 ```bash
+uv run outdoor-agent search \
+  --near "Utrecht, Netherlands" \
+  --radius-km 30 \
+  --activity gravel \
+  --distance-km 20:35 \
+  --loop preferred \
+  --limit 5 \
+  --json
+```
+
+`--near` accepts a place name or local `latitude,longitude`. Place names go to the configured Nominatim service and use a 30-day cache. OSM search uses a radius-bounded Overpass request (up to 100 km and 200 route relations), cached according to `discovery_cache_ttl_seconds`. Activity tags narrow the request. A radius crossing the antimeridian is rejected because one Overpass bbox cannot represent it. Cached results report freshness; stale cache and partial Overpass responses never appear as clean fresh results. See [discovery details](docs/discovery.md) for the probe evidence, ODbL attribution, geometry reconstruction, ranking and limits.
+
+Searches save normalized route metadata locally. List and retrieve saved routes without another provider request:
+
+```bash
+uv run outdoor-agent routes --limit 100 --json
+uv run outdoor-agent get --route-id osm:relation:93841 --json
+uv run outdoor-agent get --route-id osm:relation:93841 --refresh --json
+```
+
+To retrieve Ride with GPS metadata, configure `RIDEWITHGPS_API_KEY` and `RIDEWITHGPS_AUTH_TOKEN` through secure environment injection or private TOML. These credentials are sent in provider headers. The adapter supports authenticated route metadata and GPX export only when the provider permits the requested route. It does not provide public community search, route pinning, or account writes. `doctor --probe` performs an explicit read-only authentication request; ordinary `doctor` does not contact providers. Credential presence is not proof that the credentials work.
+
+## Inspect or import GPX
+
+Inspection is local and read-only. Import preserves the exact source bytes, stores a normalized route and records the supplied provenance. A GPX file alone does not establish who created or rode the route.
+
+```bash
+uv run outdoor-agent inspect ./ride.gpx --activity gravel --json
 uv run outdoor-agent import-gpx ./ride.gpx \
   --activity gravel \
   --source-url https://ridewithgps.com/routes/12345 \
   --source-type community \
-  --attribution 'Original route creator' \
+  --attribution "Original route creator" \
   --json
 ```
 
-Substitute your actual original URL and author. Import does not fetch the URL, verify
-route ownership/entitlement, or imply permission to republish. Source URLs are HTTPS
-and limited to Ride with GPS, Wikiloc, AllTrails, Strava and OpenStreetMap hosts;
-credentials, query strings, fragments and nonstandard ports are rejected. An embedded
-safe GPX metadata link is retained when no URL is explicitly supplied. Other embedded
-links remain in the original GPX bytes with a warning. Creator names are retained;
-email addresses and arbitrary extensions are not copied into normalized metadata.
-A local GPX has `source_type: unknown` unless the user supplies provenance. It never
-acquires fabricated ratings, reviews or popularity.
+Use the original URL and attribution when known. Import does not fetch or validate the remote page or establish export rights. URL validation only accepts supported HTTPS source hosts and rejects credentials, query strings, fragments, private endpoints and nonstandard ports. Unknown provenance remains `unknown`; ratings and popularity are never invented.
 
-## GPX and local state
+GPX tracks, routes and disconnected segments are preserved separately. Distance uses WGS84 geodesics and excludes gaps. Invalid coordinates, unsafe XML, oversized files and excessive point counts are rejected. Geometry is not silently joined, repaired or simplified.
 
-Inspection is read-only and does not create state directories. Import stores the exact
-original bytes under `$XDG_DATA_HOME/outdoor-agent/gpx/<sha256>.gpx` and a versioned
-SQLite record in `state.sqlite3`. If XDG variables are unset, data lives under
-`~/.local/share/outdoor-agent`; the future HTTP cache defaults to
-`~/.cache/outdoor-agent`. Cache configuration is available now; no HTTP cache is needed
-in Phase 1.
+## Check closures and recheck saved routes
 
-Stable IDs use `local:<sha256-of-original-bytes>`. Repeat imports reuse the existing
-record, timestamp and provenance; first import wins. Different byte representations
-remain different imports. Geometry deduplication and provenance merging belong to
-Phase 2. Imported GPX artifacts and newly created state files are private (0600),
-with new app directories 0700. Existing parent-directory permissions remain under
-operator control. Altered/missing stored artifacts produce `CACHE_CORRUPT`.
-
-Track segments and routes remain separate. Distance uses the WGS84 ellipsoid and
-excludes gaps; points are never silently connected or repaired. Coordinates retain
-EPSG:4326 precision, and multiple segments become a MultiLineString. Isolated points
-remain in counts/bounds and the unchanged artifact but cannot form line geometry.
-Waypoint-only files have null route length and no line geometry. Elevation gain is
-null if track/route elevation samples are incomplete; it sums positive differences
-within each segment otherwise. Loop detection uses an explicit 20 m endpoint
-proximity heuristic only for a single segment. It does not verify navigability. When a GPX contains both tracks and routes, totals
-include all supplied segments and may count alternative representations twice; a
-warning makes that ambiguity explicit.
-
-Inputs are limited to 16 MiB and 100,000 GPX points. Invalid/empty GPX, out-of-range
-or nonfinite coordinates/elevations, DTDs and XML entities are rejected. UTF-8 XML
-(including a BOM) is supported. No automatic GPX rewriting or simplification occurs.
-
-## Configuration
-
-Use `~/.config/outdoor-agent/config.toml` (or `$XDG_CONFIG_HOME`), or pass a root option:
+The closure check reads both current and planned public NDW feeds unless `--feed-file` is supplied. The parser decodes supported direct WGS84 GML lines. Alert-C and other unresolved location references remain unknown. NDW primarily covers road traffic measures; parks, trails, paths and forestry closures have incomplete coverage. The observed future horizon may be unknown or end before the requested date.
 
 ```bash
-uv run outdoor-agent --config ./config.toml doctor --json
+uv run outdoor-agent check-closures \
+  --route-id osm:relation:93841 \
+  --date 2026-10-11 \
+  --activity hiking \
+  --json
+
+# Explicit local fixture mode; output is marked fixture_mode.
+uv run outdoor-agent check-closures \
+  --gpx tests/fixtures/example.gpx \
+  --date 2026-10-11 \
+  --activity gravel \
+  --feed-file tests/fixtures/ndw_closures.xml \
+  --json
+
+# Recheck selected saved routes, or omit --route-id to check every saved route.
+uv run outdoor-agent recheck \
+  --route-id osm:relation:93841 \
+  --date 2026-10-11 \
+  --json
 ```
+
+Dates are interpreted as the local calendar day in `default_timezone` (default `Europe/Amsterdam`), including 23- or 25-hour DST days. A datetime denotes an instant. Naive local datetimes must be unambiguous and existent; ambiguous or nonexistent DST times are rejected and require an explicit UTC offset. Date precision and timezone are retained in results.
+
+Possible statuses include `known_conflict`, `possible_conflict`, `no_known_conflict`, `coverage_unknown`, and `check_failed`. A feed outage or unresolved location cannot be treated as safe, and `no_known_conflict` does not guarantee a route is open. Partial results are returned with warnings; add `--strict` to exit 6 after emitting them. Each check stores a stable comparison against the previous finding set. SQLite schema version 2 migrates older state transactionally; back up the SQLite database together with its GPX artifacts.
+
+## Optional Google Places enrichment
+
+Google requests are opt-in: set `google_enabled = true` and supply `GOOGLE_MAPS_API_KEY` independently. The default switch is off. Keep a small explicit `max_google_requests_per_run`; zero prevents requests, and a missing key is reported as an error. Offline mode skips the provider and returns a partial result. The adapter samples at most 20 route points, searches within 500 m, requests at most 10 places per sample, and bounds response size. Only the sampled point centers are sent, not the GPX or full route. The budget counts HTTP sends; provider retries are disabled. Google responses are not cached or persisted. Review Google Maps Platform terms for your intended use and display its attribution.
+
+```bash
+uv run outdoor-agent places \
+  --route-id osm:relation:93841 \
+  --category viewpoint \
+  --provider google \
+  --json
+```
+
+Categories include `viewpoint`, `attraction`, `trailhead`, `park`, `campground`, and `picnic`; viewpoint and trailhead use broader Google type proxies and are labeled in warnings.
+
+## Export or prepare a COROS handoff
+
+```bash
+uv run outdoor-agent export \
+  --route-id local:YOUR_ROUTE_ID \
+  --format gpx \
+  --output ./exports/route.gpx \
+  --json
+
+uv run outdoor-agent deliver \
+  --route-id local:YOUR_ROUTE_ID \
+  --target coros \
+  --account "my COROS account" \
+  --dry-run \
+  --json
+
+# After reviewing the plan, --confirm prepares a local GPX for manual app import.
+uv run outdoor-agent deliver \
+  --route-id local:YOUR_ROUTE_ID \
+  --target coros \
+  --account "my COROS account" \
+  --confirm \
+  --json
+```
+
+Export preserves original imported GPX bytes when available. An OSM route export encodes the currently mapped geometry into a new GPX; it is not an original provider GPX and disconnected segments stay separate. Ride with GPS GPX bytes are exported only through the authenticated provider endpoint when permitted. The export command will not overwrite an existing file unless `--overwrite` is supplied.
+
+Delivery is a local manual handoff. The default and `--dry-run` report a plan; `--confirm` writes a local GPX and records local preparation. The account option is only a human-readable label. No Ride with GPS pin, COROS account submission, or watch sync occurs. Results report `watch_sync_unverified`; follow the instructions in the COROS app and verify the route on the device yourself.
+
+## Configuration and network behavior
+
+Configuration precedence is environment variables, TOML, then defaults. `.env.example` lists supported placeholders, but the application does not load `.env` automatically. Keep private TOML and credential injection files restricted to the service user. Configure trusted HTTPS provider endpoints without query parameters. Literal private/loopback IPs and local hostnames are rejected. Redirects are not followed. Requests have bounded timeouts and payload sizes, provider-specific throttling, and up to three attempts for transient HTTP failures. On Linux, file locks coordinate throttling across processes. HTTP caches are local, private TTL files under `cache_dir`; stale entries used in offline mode are explicitly marked. OSM discovery uses `discovery_cache_ttl_seconds`; NDW uses `ndw_cache_ttl_seconds` and reports data older than `ndw_max_age_seconds` as stale. Nominatim uses a 30-day cache. Google responses and authenticated Ride with GPS responses are not cached.
 
 ```toml
 [outdoor_agent]
@@ -93,88 +148,60 @@ data_dir = "/srv/outdoor-agent/state"
 cache_dir = "/srv/outdoor-agent/cache"
 default_timezone = "Europe/Amsterdam"
 default_region = "NL"
-http_timeout_seconds = 20
-offline = true
+offline = false
+disabled_providers = ["ridewithgps"]
 google_enabled = false
-max_google_requests_per_run = 20
+max_google_requests_per_run = 0
+discovery_cache_ttl_seconds = 86400
+ndw_cache_ttl_seconds = 600
+ndw_max_age_seconds = 3600
+closure_buffer_m = 20
+# Optional secrets; keep this TOML file private, or inject these variables instead.
+# ride_api_key = "..."
+# ride_auth_token = "..."
 ```
 
-Environment overrides TOML, which overrides defaults. [.env.example](.env.example)
-contains placeholders; `.env` is not automatically loaded. Future adapters will use
-`RIDE_CONFIG_DIR` and separately injected `GOOGLE_MAPS_API_KEY`, never OpenClaw's
-internal secrets. `doctor` reports credential configuration **presence**, never values,
-and does not authenticate or probe a provider. Timeout, offline and Google budget
-settings are validated now for future adapters; no Google calls occur even when the
-flag is enabled in Phase 1. Unknown TOML fields fail rather than being ignored.
+OSM data is © OpenStreetMap contributors and available under ODbL; retain attribution and review ODbL obligations for redistributed databases or derived databases. Google content has separate Google Maps Platform terms and is deliberately not retained. The command sends only the location/search data needed by the selected external provider; inspection and local storage remain local.
 
-Global `--json`, `--quiet`, `--verbose`, `--config` and `--version` precede commands;
-`--json` is also accepted after each command. Quiet suppresses optional human warnings;
-JSON retains all warnings. Verbose adds only non-sensitive local diagnostics to stderr.
-Help and plain version output are human-readable.
+## JSON and exit codes
 
-## Machine contracts
-
-Every information command with `--json` returns one object on stdout, with
-`schema_version: "1.0"`, `status`, request ID and UTC generation time. Logs go to stderr.
-Bad input, parser errors and provider unavailability also return the same envelope.
-Published schemas are in [schemas/v1](schemas/v1); `schema --json` exports matching
-schemas. Validate the envelope with `response.json`, and its data with the command's
-`inspection.json`/`import_result.json` or each provider with `provider.json`.
-Null measurements mean unknown. `partial` is supported by the model and contract
-fixture for later adapters; Phase 1 does not perform live searches or closure checks.
+Information commands support `--json` and emit one versioned response object on stdout. Diagnostics go to stderr. `--strict` on partial-capable commands emits the result and then exits 6. Null means unknown, not zero.
 
 | Exit | Meaning |
 |---|---|
-| 0 | Complete local operation |
-| 2 | Bad arguments, GPX, URL or configuration |
-| 3 | Credentials/permissions (reserved for adapters) |
-| 4 | Provider unavailable/rate limit (reserved) |
-| 5 | Capability not implemented/supported |
-| 6 | Strict insufficient/partial coverage (reserved) |
-| 7 | Storage/internal failure |
+| 0 | Complete operation |
+| 2 | Invalid arguments, data, or configuration |
+| 3 | Authentication or permission required |
+| 4 | Provider unavailable, rate-limited, or request budget exhausted |
+| 5 | Provider, activity, or capability unsupported/disabled |
+| 6 | Strict mode found partial or insufficient coverage |
+| 7 | Storage or unexpected local failure |
 
-Capability evidence and an installed adapter are separate fields. A supported NDW
-feed fetch does **not** mean this release can assess closures. See the dated
-[provider investigation](docs/provider-feasibility.md): the documented Ride with GPS
-API scopes listing to an authenticated user's routes; public community search is not
-established. OSM route relations are the planned Phase 2 official-trail source.
-No known closure would never guarantee an open route; Phase 1 cannot check closures.
+`providers --json` reports capability evidence separately from implemented behavior. See the dated [provider feasibility notes](docs/provider-feasibility.md); provider documentation is not evidence that every route is accessible.
 
 ## OpenClaw
 
-Copy or symlink [skills/openclaw/outdoor-routes](skills/openclaw/outdoor-routes) into
-`<OpenClaw workspace>/skills/outdoor-routes`. Set the actual project root in the
-skill's command instructions (example `/srv/outdoor-agent`). `uv run --project`
-works without relying on the agent's current directory. The skeleton only invokes
-working local commands and explicitly describes future phases and confirmation rules.
-The current skill format was checked against official documentation; loading it on
-the target OpenClaw host remains an operator integration check.
+Copy or symlink [skills/openclaw/outdoor-routes](skills/openclaw/outdoor-routes) into `<OpenClaw workspace>/skills/outdoor-routes`. Set the project root once in the skill instructions (for example `/srv/outdoor-agent`); commands use `uv run --project /srv/outdoor-agent outdoor-agent ...` from any working directory. The skill confirms delivery preparation, honors requested imports and exports, distinguishes official mapped trails from community routes, and treats unknown closure coverage conservatively. The file follows the documented OpenClaw skill layout; loading it on the target host remains an operator integration check.
 
 ## Development and operations
 
 ```bash
 uv sync --dev
-uv run pytest --cov=outdoor_agent.geo --cov=outdoor_agent.models --cov-report=term-missing
+uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src
 uv lock --check
 ```
 
-CI runs the same checks on Ubuntu with no API keys. Baseline tests deny socket
-connections, use isolated XDG directories and synthetic fixtures, and never depend on
-live provider availability. Click/Typer versions are bounded to retain the public Click
-extension interface used for structured parser errors.
+CI runs offline without paid or credentialed provider calls. Run the tool as an unprivileged user, restrict configuration and state directory permissions, and back up the SQLite database and GPX artifacts together. There is no listener, telemetry service, or background daemon.
 
-Run as an unprivileged SSH/service user, keep configuration/state private, and back up
-SQLite **and** original GPX artifacts together. Take a stopped-process copy or use
-SQLite's backup API for consistent snapshots. Do not place state in a world-writable
-shared directory. No listener, telemetry, daemon or second LLM is required. Inspection
-returns intentionally requested track details to stdout; avoid sending that output to
-shared logs. Later geocoding/search will send locations to the selected provider and
-closure fetching will request public feeds; those calls are not implemented here.
 
-The next increments are live OSM discovery, credentialed lawful Ride with GPS reads,
-NDW date/mode-aware closure analysis, then approved export and COROS handoff. The full
-[specification](spec.md) remains the target; its final acceptance demo is not claimed
-complete by this milestone.
+Public integration tests require explicit opt-in and perform only small Nominatim/Overpass reads:
+
+```bash
+OUTDOOR_AGENT_LIVE_TESTS=1 uv run pytest -m live
+```
+
+See [the completed CLI smoke demo](docs/cli-demo.md) for dated live evidence, and
+[deployment and prompt recipes](docs/operations.md) for an SSH/OpenClaw installation.

@@ -711,3 +711,22 @@ A meaningful v1 demo:
 > Always run `uv sync --dev`, `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy src` (and address failures). If repository restrictions prevent a command, explain the blocker.
 >
 > Make small coherent commits / PRs; document what is genuinely implemented, what remains unverified, exact setup commands, and how to test each milestone. Ask for human approval before any third-party account writes or secrets.
+
+
+## Implementation status — 2026-10-09
+
+Version 0.2.0 implements the CLI through Phase 5: all command targets, saved route
+metadata, live OSM/Nominatim discovery, transparent ranking/deduplication, authenticated
+documented RWGPS reads/export, NDW direct-GML closure assessment, rechecks and change
+comparisons, opt-in budgeted Google Places, lossless local GPX export, and confirmed,
+audited, idempotent manual COROS GPX handoff. Versioned schemas and the OpenClaw skill
+cover these workflows. See `docs/cli-demo.md` for live and offline verification.
+
+Provider gates remain explicit: no verified public community-route search is configured;
+OSM results are mapped `official_trail` records. Alert-C references are retained unresolved,
+not falsely decoded, and NDW trail/future coverage is uncertain. Google and authenticated
+RWGPS contracts are tested offline; no paid Google request or credentialed account probe
+was performed. COROS account submission and physical watch arrival are unverified; the
+implemented handoff is manual GPX. OpenClaw host loading, a systemd timer and MCP are
+operator/optional follow-ups. These limits do not silently produce fixture recommendations
+or claims of complete coverage or delivery.

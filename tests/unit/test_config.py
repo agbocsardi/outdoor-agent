@@ -44,6 +44,9 @@ def test_default_toml_location(tmp_path: Path) -> None:
         "[wrong]\nvalue=1",
         "invalid!!",
         'outdoor_agent="SECRET_SENTINEL"',
+        '[outdoor_agent]\noverpass_url="https://example.com/data?key=SECRET_SENTINEL"',
+        '[outdoor_agent]\ndisabled_providers=["SECRET_SENTINEL"]',
+        "[outdoor_agent]\nranking_weights={distance=-1}",
     ],
 )
 def test_invalid_config_is_redacted(tmp_path: Path, value: str) -> None:

@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "NearbyPlace": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "formatted_address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Formatted Address"
+        },
+        "latitude": {
+          "title": "Latitude",
+          "type": "number"
+        },
+        "longitude": {
+          "title": "Longitude",
+          "type": "number"
+        },
+        "google_maps_uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Google Maps Uri"
+        },
+        "types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Types",
+          "type": "array"
+        },
+        "source": {
+          "default": "Google Places",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "latitude",
+        "longitude",
+        "types"
+      ],
+      "title": "NearbyPlace",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "places": {
+      "items": {
+        "$ref": "#/$defs/NearbyPlace"
+      },
+      "title": "Places",
+      "type": "array"
+    },
+    "request_count": {
+      "title": "Request Count",
+      "type": "integer"
+    },
+    "limits": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "title": "Limits",
+      "type": "object"
+    },
+    "source": {
+      "default": "Google Places API (New)",
+      "title": "Source",
+      "type": "string"
+    },
+    "attribution": {
+      "default": "Google Maps",
+      "title": "Attribution",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "places",
+    "request_count",
+    "limits",
+    "warnings"
+  ],
+  "title": "PlacesResult",
+  "type": "object"
+}

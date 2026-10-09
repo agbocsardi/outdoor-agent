@@ -75,6 +75,11 @@
       "title": "Implemented",
       "type": "boolean"
     },
+    "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+    },
     "auth_required": {
       "title": "Auth Required",
       "type": "boolean"

@@ -16,3 +16,7 @@ build/
 *.egg-info/
 routes/
 watch-files/
+exports/
+handoff/
+*.gpx
+!tests/fixtures/*.gpx

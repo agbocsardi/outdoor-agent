@@ -141,10 +141,23 @@
       "enum": [
         "precise",
         "approximate",
+        "incomplete",
         "unresolved"
       ],
       "title": "Geometry Quality",
       "type": "string"
+    },
+    "severity": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Severity"
     },
     "starts_at": {
       "anyOf": [
@@ -271,6 +284,35 @@
       ],
       "default": null,
       "title": "Raw Metadata Reference"
+    },
+    "timing_quality": {
+      "default": "unknown",
+      "enum": [
+        "precise",
+        "approximate",
+        "unknown"
+      ],
+      "title": "Timing Quality",
+      "type": "string"
+    },
+    "location_reference_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Location Reference Type"
+    },
+    "restriction_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Restriction Evidence",
+      "type": "array"
     }
   },
   "required": [

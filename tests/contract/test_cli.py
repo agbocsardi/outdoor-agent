@@ -91,21 +91,24 @@ def test_malformed_input_is_redacted(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "arguments",
+    "arguments,code,error",
     [
-        ["search", "--near", "Utrecht"],
-        ["check-closures", "--gpx", "missing.gpx", "--date", "2026-10-11"],
-        ["places", "--gpx", "missing.gpx", "--category", "viewpoint"],
-        ["export", "--route-id", "ridewithgps:1", "--output", "unused.gpx"],
-        ["deliver", "--route-id", "ridewithgps:1", "--dry-run"],
-        ["deliver", "--route-id", "ridewithgps:1", "--confirm"],
+        (
+            ["search", "--near", "Utrecht", "--source-type", "community"],
+            5,
+            "COMMUNITY_DISCOVERY_UNAVAILABLE",
+        ),
+        (["check-closures", "--gpx", "missing.gpx", "--date", "2026-10-11"], 2, "GPX_NOT_FOUND"),
+        (["places", "--gpx", "missing.gpx", "--category", "viewpoint"], 2, "GPX_NOT_FOUND"),
+        (["export", "--route-id", "ridewithgps:1", "--output", "unused.gpx"], 3, "AUTH_REQUIRED"),
+        (["deliver", "--route-id", "ridewithgps:1", "--dry-run"], 2, "ROUTE_NOT_FOUND"),
+        (["deliver", "--route-id", "ridewithgps:1", "--confirm"], 2, "ROUTE_NOT_FOUND"),
     ],
 )
-def test_later_phase_targets_fail_honestly(arguments: list[str]) -> None:
-    response = invoke([*arguments, "--json"], 5)
+def test_unavailable_operations_fail_honestly(arguments: list[str], code: int, error: str) -> None:
+    response = invoke([*arguments, "--json"], code)
     assert response["status"] == "error"
-    assert response["error"]["code"] == "CAPABILITY_NOT_IMPLEMENTED"
-    assert response["error"]["suggestions"]
+    assert response["error"]["code"] == error
 
 
 def test_doctor_never_exposes_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -114,18 +117,18 @@ def test_doctor_never_exposes_credentials(monkeypatch: pytest.MonkeyPatch) -> No
     response = invoke(["doctor", "--json"])
     assert "SECRET_SENTINEL" not in json.dumps(response)
     assert response["data"]["google_key_configured"] is True
-    assert response["data"]["ride_auth_state"] == "unverified"
+    assert response["data"]["ride_auth_state"] == "auth_required"
 
 
 def test_version() -> None:
-    assert runner.invoke(app, ["--version"]).stdout.strip() == "0.1.0"
-    assert invoke(["--json", "--version"])["data"]["version"] == "0.1.0"
+    assert runner.invoke(app, ["--version"]).stdout.strip() == "0.2.0"
+    assert invoke(["--json", "--version"])["data"]["version"] == "0.2.0"
 
 
 def test_logs_go_to_stderr() -> None:
     result = runner.invoke(app, ["--verbose", "providers", "--json"])
     json.loads(result.stdout)
-    assert "Local operation" in result.stderr
+    assert "Command completed" in result.stderr
 
 
 def test_unexpected_failure_is_redacted(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -169,7 +172,11 @@ def test_capabilities_do_not_enable_unimplemented_adapters() -> None:
     response = invoke(["providers", "--json"])
     providers = {item["provider"]: item for item in response["data"]["providers"]}
     assert providers["local"]["implemented"] is True
-    assert all(not item["implemented"] for name, item in providers.items() if name != "local")
+    assert all(
+        providers[name]["implemented"] for name in ("osm", "ndw", "ridewithgps", "google", "coros")
+    )
+    assert not providers["wikiloc"]["implemented"]
+    assert not providers["google"]["enabled"]
     assert providers["ridewithgps"]["capabilities"]["discover_public"]["state"] == "unsupported"
     assert providers["ndw"]["capabilities"]["fetch_closures"]["evidence"] == [
         "https://opendata.ndw.nu/tijdelijke_verkeersmaatregelen_afsluitingen.xml.gz"
