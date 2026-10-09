@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import tempfile
 from typing import TYPE_CHECKING, Any, Literal
 
 from pyproj import Geod
 
 from outdoor_agent.errors import OutdoorError
-from outdoor_agent.models.routes import Activity, Geometry, Route, SourceType, now
+from outdoor_agent.geo.export import route_gpx
+from outdoor_agent.models.routes import Activity, Geometry, GPXArtifact, Route, SourceType, now
+from outdoor_agent.providers.base import SearchCriteria, SearchResult
 from outdoor_agent.providers.http import FetchResult, HTTPClient
+from outdoor_agent.providers.registry import Provider, registry
 
 if TYPE_CHECKING:
     from outdoor_agent.config import Settings
@@ -71,6 +76,7 @@ class OSMProvider:
         self.http = http
         self.last_fetch: FetchResult | None = None
         self.warnings: list[str] = []
+        self.declaration: Provider = next(item for item in registry() if item.provider == "osm")
 
     async def search(
         self,
@@ -139,7 +145,8 @@ class OSMProvider:
 
     async def get(self, route_id: str) -> Route:
         """Fetch one OSM route relation by numeric ID using a bounded query."""
-        if not route_id.isdecimal() or len(route_id) > 19 or int(route_id) <= 0:
+        value = route_id.removeprefix("osm:").removeprefix("relation:")
+        if not value.isdecimal() or len(value) > 19 or int(value) <= 0:
             raise OutdoorError(
                 "INVALID_ROUTE_ID",
                 "An OSM route ID must be a positive relation number.",
@@ -147,12 +154,12 @@ class OSMProvider:
             )
         if self.http is None:
             async with HTTPClient(self.settings) as client:
-                return await OSMProvider(self.settings, client).get(route_id)
+                return await OSMProvider(self.settings, client).get(value)
         self.last_fetch = await self.http.fetch(
             "POST",
             self.settings.overpass_url,
             provider="overpass",
-            data={"data": f"[out:json][timeout:25];relation({int(route_id)});out body geom;"},
+            data={"data": f"[out:json][timeout:25];relation({int(value)});out body geom;"},
             ttl=self.settings.discovery_cache_ttl_seconds,
             max_bytes=4 * 1024 * 1024,
             min_interval=2.0,
@@ -164,7 +171,7 @@ class OSMProvider:
                 for item in elements
                 if isinstance(item, dict)
                 and item.get("type") == "relation"
-                and item.get("id") == int(route_id)
+                and item.get("id") == int(value)
             )
             tags = element.get("tags", {})
             if not isinstance(tags, dict) or tags.get("type") != "route":
@@ -179,6 +186,47 @@ class OSMProvider:
             raise OutdoorError(
                 "ROUTE_NOT_FOUND", "The OSM relation could not be fetched.", 4, provider="osm"
             ) from exc
+
+    async def export_gpx(self, route_id: str) -> GPXArtifact:
+        """Encode the current mapped geometry as GPX; this is not original provider GPX."""
+        route = await self.get(route_id)
+        content = route_gpx(route)
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix="outdoor-agent-", suffix=".gpx", delete=False
+            ) as file:
+                file.write(content)
+                file.flush()
+                return GPXArtifact(
+                    route_id=route.id,
+                    path=file.name,
+                    sha256=hashlib.sha256(content).hexdigest(),
+                    byte_count=len(content),
+                )
+        except OSError as exc:
+            raise OutdoorError(
+                "EXPORT_WRITE_FAILED", "Cannot stage mapped GPX artifact locally.", 7
+            ) from exc
+
+
+class OSMDiscoveryAdapter:
+    """Protocol adapter for the legacy OSM provider search/get interface."""
+
+    def __init__(self, provider: OSMProvider) -> None:
+        self.provider = provider
+        self.declaration: Provider = next(item for item in registry() if item.provider == "osm")
+
+    async def search(self, criteria: SearchCriteria) -> SearchResult:
+        routes = await self.provider.search(
+            criteria.bbox, activity=criteria.activity, limit=criteria.limit
+        )
+        fetch = self.provider.last_fetch
+        return SearchResult(
+            routes=routes,
+            warnings=self.provider.warnings.copy(),
+            cached=bool(fetch and fetch.from_cache),
+            stale=bool(fetch and fetch.stale),
+        )
 
 
 def relation_to_route(element: dict[str, Any], fetched_at: Any = None) -> Route:
@@ -210,6 +258,25 @@ def relation_to_route(element: dict[str, Any], fetched_at: Any = None) -> Route:
         value = tags.get(key)
         if isinstance(value, (str, int, float, bool)):
             raw[key] = value
+    member_tags: list[dict[str, Any]] = []
+    members = element.get("members", [])
+    if isinstance(members, list):
+        for member in members:
+            if (
+                isinstance(member, dict)
+                and member.get("type") == "way"
+                and isinstance(member.get("tags"), dict)
+            ):
+                member_tags.append(member["tags"])
+    if any(
+        str(tags.get(key, "")).casefold() in {"yes", "true", "1"}
+        for tags in member_tags
+        for key in ("bridge", "tunnel")
+    ):
+        raw["bridge_tunnel"] = "mixed_or_present"
+    layer_values = {str(tags.get("layer")) for tags in member_tags if "layer" in tags}
+    if member_tags and len(layer_values) == 1 and all("layer" in tags for tags in member_tags):
+        raw["layer"] = next(iter(layer_values))
     warnings = []
     if not lines:
         warnings.append("Route relation has no usable member-way geometry.")

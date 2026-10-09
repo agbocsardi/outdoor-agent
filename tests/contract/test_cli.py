@@ -100,7 +100,11 @@ def test_malformed_input_is_redacted(tmp_path: Path) -> None:
         ),
         (["check-closures", "--gpx", "missing.gpx", "--date", "2026-10-11"], 2, "GPX_NOT_FOUND"),
         (["places", "--gpx", "missing.gpx", "--category", "viewpoint"], 2, "GPX_NOT_FOUND"),
-        (["export", "--route-id", "ridewithgps:1", "--output", "unused.gpx"], 3, "AUTH_REQUIRED"),
+        (
+            ["export", "--confirm", "--route-id", "ridewithgps:1", "--output", "unused.gpx"],
+            3,
+            "AUTH_REQUIRED",
+        ),
         (["deliver", "--route-id", "ridewithgps:1", "--dry-run"], 2, "ROUTE_NOT_FOUND"),
         (["deliver", "--route-id", "ridewithgps:1", "--confirm"], 2, "ROUTE_NOT_FOUND"),
     ],
@@ -121,8 +125,8 @@ def test_doctor_never_exposes_credentials(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_version() -> None:
-    assert runner.invoke(app, ["--version"]).stdout.strip() == "0.2.0"
-    assert invoke(["--json", "--version"])["data"]["version"] == "0.2.0"
+    assert runner.invoke(app, ["--version"]).stdout.strip() == "0.3.0"
+    assert invoke(["--json", "--version"])["data"]["version"] == "0.3.0"
 
 
 def test_logs_go_to_stderr() -> None:

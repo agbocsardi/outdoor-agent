@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,49 @@ async def test_carriageway_only_event_is_not_applied_to_cycle_route(tmp_path: Pa
         _settings(tmp_path), _route(), "2026-10-11", Activity.gravel, fixture
     )
     assert all(item.event_id != "road-only-record" for item in report.findings)
+
+
+@pytest.mark.asyncio
+async def test_road_scope_without_vehicle_evidence_is_retained_as_uncertain(
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime
+
+    from outdoor_agent.providers.ndw import FeedFetchResult, FeedSnapshot
+
+    now = datetime.now(UTC)
+    event = ClosureEvent(
+        id="road-scope",
+        provider="ndw",
+        description="Road carriageway works",
+        geometry=Geometry(type="LineString", coordinates=[(5.1, 52.1), (5.1, 52.101)]),
+        geometry_quality="precise",
+        starts_at=now - timedelta(days=1),
+        ends_at=now + timedelta(days=1),
+        timing_quality="precise",
+        mode_evidence="scope",
+        restriction_type="carriagewayClosure",
+        status="active",
+    )
+    snapshot = FeedSnapshot(
+        events=[event],
+        fetched_at=now,
+        source_timestamp=now,
+        stale=False,
+        from_cache=False,
+        source="https://feed.example/current",
+        warnings=[],
+    )
+    report = await assess_route(
+        _settings(tmp_path),
+        _route(),
+        now.date().isoformat(),
+        Activity.gravel,
+        feed_result=FeedFetchResult(snapshots=[snapshot], errors=[]),
+    )
+    assert any(item.event_id == event.id for item in report.findings)
+    assert report.findings[0].classification == "possible_conflict"
+    assert report.findings[0].mode_overlap is None
 
 
 def test_parallel_route_15m_away_is_nearby_not_intersection() -> None:
@@ -186,6 +230,31 @@ def test_uncertain_grade_separation_stays_possible() -> None:
     assert any("approximate" in issue for issue in finding.limitations)
 
 
+def test_precise_plan_view_overlap_with_bridge_clue_stays_possible() -> None:
+    from datetime import UTC, datetime
+
+    event = ClosureEvent(
+        id="bridge-level-unknown",
+        provider="ndw",
+        description="Cycleway closure",
+        affected_modes=["bike"],
+        mode_evidence="explicit",
+        grade_separation_evidence=["bridge=yes", "layer=1"],
+        starts_at=datetime(2026, 10, 10, tzinfo=UTC),
+        ends_at=datetime(2026, 10, 12, tzinfo=UTC),
+        timing_quality="precise",
+        geometry_quality="precise",
+        restriction_type="cycleway closure",
+        status="active",
+        geometry=Geometry(type="LineString", coordinates=[(5.1, 52.1), (5.1, 52.101)]),
+    )
+    match = compare_geometry(_route(), event, 20)
+    assert match is not None and match.overlap_m > 0
+    finding = finding_for(_route(), event, match, True, 20)
+    assert finding.classification == "possible_conflict"
+    assert any("level relation is unresolved" in item for item in finding.limitations)
+
+
 @pytest.mark.parametrize(
     "changes",
     [{"restriction_type": "constructionWork"}, {"direction": "positive"}],
@@ -294,3 +363,43 @@ async def test_newer_cancellation_replaces_active_feed_revision(
     report = await assess_route(_settings(tmp_path), _route(), "2026-10-11", Activity.gravel)
     assert report.status != "known_conflict"
     assert all(finding.event_id != active.id for finding in report.findings)
+
+
+@pytest.mark.asyncio
+async def test_report_retains_per_source_refresh_and_publication_provenance(
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from outdoor_agent.providers.ndw import FeedFetchResult, FeedSnapshot, parse_fixture
+
+    fixture = Path(__file__).parents[1] / "fixtures/ndw_closures.xml"
+    original = parse_fixture(fixture)
+    refreshed = datetime.now(UTC) - timedelta(minutes=5)
+    published = refreshed - timedelta(hours=2)
+    source = FeedSnapshot(
+        events=original.events,
+        fetched_at=refreshed,
+        source_timestamp=published,
+        stale=False,
+        from_cache=True,
+        source="https://feed.example/current",
+        warnings=[],
+        response_headers={"etag": 'W/"v12"', "last-modified": "Fri, 09 Oct 2026 10:00:00 GMT"},
+    )
+    report = await assess_route(
+        _settings(tmp_path),
+        _route(),
+        "2026-10-11",
+        Activity.gravel,
+        feed_result=FeedFetchResult(snapshots=[source], errors=[]),
+    )
+    freshness = report.source_freshness[0]
+    assert freshness.source == source.source
+    assert freshness.last_successful_refresh == refreshed
+    assert freshness.publication_at == published
+    assert freshness.etag == 'W/"v12"'
+    assert freshness.last_modified == "Fri, 09 Oct 2026 10:00:00 GMT"
+    assert freshness.from_cache is True
+    assert freshness.refresh_age_seconds is not None
+    assert freshness.publication_age_seconds is not None

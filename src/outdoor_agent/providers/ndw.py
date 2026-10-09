@@ -42,6 +42,7 @@ class FeedSnapshot:
     source: str
     warnings: list[str]
     fixture_mode: bool = False
+    response_headers: dict[str, str] | None = None
 
 
 @dataclass
@@ -60,6 +61,82 @@ def _text(element: Element, *names: str) -> str | None:
         if _local(child) in wanted and child.text and child.text.strip():
             return child.text.strip()
     return None
+
+
+def _localized_text(element: Element, *names: str) -> str | None:
+    """Read a DATEX value, preferring Dutch/English localized values when present."""
+    wanted = set(names)
+    for node in element.iter():
+        if _local(node) not in wanted:
+            continue
+        values = [child for child in node.iter() if _local(child) == "value"]
+        if values:
+            for preferred in ("nl", "en", ""):
+                for value in values:
+                    language = next(
+                        (v for k, v in value.attrib.items() if k.rsplit("}", 1)[-1] == "lang"),
+                        "",
+                    ).lower()
+                    if language == preferred and value.text and value.text.strip():
+                        return value.text.strip()
+            for value in values:
+                if value.text and value.text.strip():
+                    return value.text.strip()
+        if node.text and node.text.strip():
+            return node.text.strip()
+    return None
+
+
+def _situation_level_text(situation: Element, *names: str) -> str | None:
+    wanted = set(names)
+
+    def visit(node: Element) -> str | None:
+        if _local(node) == "situationRecord":
+            return None
+        if _local(node) in wanted:
+            value = _localized_text(node, _local(node))
+            if value:
+                return value
+        for child in node:
+            found = visit(child)
+            if found:
+                return found
+        return None
+
+    return visit(situation)
+
+
+def _record_issuer(record: Element, situation: Element) -> str | None:
+    local = _localized_text(record, "sourceName", "organisationName", "issuer")
+    return local or _situation_level_text(situation, "sourceName", "organisationName", "issuer")
+
+
+def _grade_clues(record: Element) -> list[str]:
+    clues: list[str] = []
+    for item in record.iter():
+        name = _local(item).lower()
+        value = (item.text or "").strip()
+        if name in {"bridge", "tunnel", "bridgeidentifier", "tunnelidentifier", "level"} and value:
+            clues.append(f"{_local(item)}={value}")
+        elif (
+            name
+            in {
+                "roadname",
+                "publiceventname",
+                "cause",
+                "comment",
+                "description",
+                "generalpubliccomment",
+                "nongeneralpubliccomment",
+            }
+            and value
+        ):
+            lower = value.lower()
+            if any(
+                word in lower for word in ("bridge", "overpass", "underpass", "tunnel", "viaduct")
+            ):
+                clues.append(f"{_local(item)}={value[:160]}")
+    return list(dict.fromkeys(clues))
 
 
 def _first_descendant(element: Element, name: str) -> Element | None:
@@ -194,11 +271,20 @@ def _modes(
 ) -> list[Literal["road", "bike", "foot", "other"]]:
     modes: set[Literal["road", "bike", "foot", "other"]] = set()
     # DATEX forVehiclesWithCharacteristicsOf/vehicleType is affirmative mode evidence.
-    vehicle_types = {
-        (element.text or "").strip().lower()
-        for element in record.iter()
-        if _local(element) == "vehicleType" and element.text
-    }
+    vehicle_types: set[str] = set()
+    for element in record.iter():
+        if _local(element) != "forVehiclesWithCharacteristicsOf":
+            continue
+
+        def collect(node: Element, in_exception: bool = False) -> None:
+            local = _local(node).lower()
+            excluded = in_exception or "except" in local or "exempt" in local
+            if not excluded and local == "vehicletype" and node.text:
+                vehicle_types.add(node.text.strip().lower())
+            for child in node:
+                collect(child, excluded)
+
+        collect(element)
     if "bicycle" in vehicle_types:
         modes.add("bike")
     if any(value in {"pedestrian", "pedestrians", "foot", "walking"} for value in vehicle_types):
@@ -225,13 +311,21 @@ def _modes(
     }:
         modes.add("foot")
     record_label = "".join(character for character in record_type.lower() if character.isalnum())
-    if record_label == "roadorcarriagewayorlanemanagement":
-        modes.add("road")
     if record_label in {"cyclewayclosure", "bicycleclosure"}:
         modes.add("bike")
     if record_label in {"footpathclosure", "pedestrianclosure", "walkwayclosure"}:
         modes.add("foot")
     return cast(list[Literal["road", "bike", "foot", "other"]], sorted(modes))
+
+
+def _mode_evidence(
+    modes: list[Literal["road", "bike", "foot", "other"]], record_type: str
+) -> Literal["explicit", "scope", "unknown"]:
+    if modes:
+        return "explicit"
+    if "road" in record_type.lower() or "carriageway" in record_type.lower():
+        return "scope"
+    return "unknown"
 
 
 def _event(
@@ -240,7 +334,7 @@ def _event(
     sid = situation.attrib.get("id", "")
     if not sid:
         sid = f"unidentified-{hashlib.sha256(ElementTree.tostring(situation)).hexdigest()[:24]}"
-    issuer = _text(situation, "value", "sourceName", "organisationName")
+    issuer = _localized_text(situation, "sourceName", "organisationName", "issuer")
     severity = _text(situation, "overallSeverity")
     published = parse_event_time(
         _text(situation, "situationVersionTime", "situationRecordVersionTime"), timezone
@@ -281,9 +375,22 @@ def _event(
         location_reference, location_type = _location_reference(location)
         geom, geometry_quality, geom_problem = _geometry(record)
         modes = _modes(record, record_type, restriction)
+        mode_evidence = _mode_evidence(modes, record_type)
         descr = " ".join(
             part
-            for part in (restriction, _text(record, "roadName", "publicEventName", "causeType"))
+            for part in (
+                restriction,
+                _localized_text(
+                    record,
+                    "roadName",
+                    "publicEventName",
+                    "causeType",
+                    "comment",
+                    "description",
+                    "generalPublicComment",
+                    "nonGeneralPublicComment",
+                ),
+            )
             if part
         )
         status = _text(record, "operatorActionStatus", "informationStatus") or "active"
@@ -299,7 +406,7 @@ def _event(
                 provider="ndw",
                 source_url=source if source.startswith("https://") else None,
                 description=descr or record_type,
-                issuer=issuer,
+                issuer=_record_issuer(record, situation),
                 geometry=geom,
                 location_reference=location_reference,
                 geometry_quality=geometry_quality,
@@ -322,6 +429,8 @@ def _event(
                     restriction,
                     *([geom_problem] if geom_problem else []),
                 ],
+                mode_evidence=mode_evidence,
+                grade_separation_evidence=_grade_clues(record),
             )
         )
     if not records:
@@ -367,6 +476,7 @@ def parse_feed(
     fetched_at: datetime | None = None,
     timezone: str = "Europe/Amsterdam",
     source: str = "fixture://ndw",
+    response_headers: dict[str, str] | None = None,
 ) -> FeedSnapshot:
     """Parse DATEX II v3 SituationPublication using bounded gzip and iterparse."""
     if len(content) > MAX_COMPRESSED_BYTES:
@@ -409,7 +519,16 @@ def parse_feed(
         warnings.append(
             "Feed publicationTime is missing or unparseable; fetched time is the only freshness evidence."
         )
-    return FeedSnapshot(events, observed, publication, False, False, source, warnings)
+    return FeedSnapshot(
+        events,
+        observed,
+        publication,
+        False,
+        False,
+        source,
+        warnings,
+        response_headers=response_headers or {},
+    )
 
 
 async def fetch_feeds(settings: Settings) -> FeedFetchResult:
@@ -440,6 +559,7 @@ async def fetch_feeds(settings: Settings) -> FeedFetchResult:
                     fetched_at=result.fetched_at,
                     timezone=settings.default_timezone,
                     source=url,
+                    response_headers=result.headers,
                 )
                 snapshot.stale = result.stale
                 snapshot.from_cache = result.from_cache

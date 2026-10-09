@@ -1,6 +1,6 @@
 # outdoor-agent
 
-`outdoor-agent` 0.2.0 is a local, JSON-first command-line tool for inspecting and saving GPX routes, discovering mapped OpenStreetMap routes, assessing public NDW closure feeds, enriching routes with opt-in Google Places data, and preparing a local GPX handoff for the COROS app. Python environments and commands use **uv**.
+`outdoor-agent` 0.3.0 is a local, JSON-first command-line tool for inspecting and saving GPX routes, searching saved community routes and mapped OpenStreetMap trails, assessing NDW and optional OSM closure evidence, enriching routes with opt-in Google Places data, and preparing a local GPX handoff for the COROS app. Python environments and commands use **uv**.
 
 ## Install
 
@@ -22,7 +22,7 @@ No `.env` file is loaded automatically. Set environment variables in the process
 
 ## Discover and save routes
 
-Search returns mapped OSM route relations as `official_trail`, with OSM attribution and relation links. OSM route relations are not community reviews or proof that a route was ridden. Public community-route search is not available: `--source-type community` returns the typed `COMMUNITY_DISCOVERY_UNAVAILABLE` error (exit 5). The default `all` search can return OSM results and reports this community-catalog gap as a partial result. Results with incomplete member geometry, stale cache data, or Overpass truncation also carry warnings.
+Search returns mapped OSM route relations as `official_trail`, with OSM attribution and relation links. OSM route relations are not community reviews or proof that a route was ridden. Public community-route search is not available: `--source-type community` with public providers returns the typed `COMMUNITY_DISCOVERY_UNAVAILABLE` error (exit 5). The default `all` search can return OSM results and reports this community-catalog gap as a partial result. Results with incomplete member geometry, stale cache data, or Overpass truncation also carry warnings.
 
 ```bash
 uv run outdoor-agent search \
@@ -31,11 +31,14 @@ uv run outdoor-agent search \
   --activity gravel \
   --distance-km 20:35 \
   --loop preferred \
+  --date 2026-10-11 \
   --limit 5 \
   --json
 ```
 
 `--near` accepts a place name or local `latitude,longitude`. Place names go to the configured Nominatim service and use a 30-day cache. OSM search uses a radius-bounded Overpass request (up to 100 km and 200 route relations), cached according to `discovery_cache_ttl_seconds`. Activity tags narrow the request. A radius crossing the antimeridian is rejected because one Overpass bbox cannot represent it. Cached results report freshness; stale cache and partial Overpass responses never appear as clean fresh results. See [discovery details](docs/discovery.md) for the probe evidence, ODbL attribution, geometry reconstruction, ranking and limits.
+
+Use `--bbox SOUTH,WEST,NORTH,EAST` for an explicit bounded query extent; `--near` then becomes optional. Without an origin, the bbox midpoint is the origin. `--radius-km` still filters route starts relative to that origin. `--shape point_to_point` requires a known non-loop; `--shape loop` requires a known loop. With `--date`, candidates receive closure assessments before ranking and limiting; unknown coverage is explicitly excluded from the closure score.
 
 Searches save normalized route metadata locally. List and retrieve saved routes without another provider request:
 
@@ -62,6 +65,16 @@ uv run outdoor-agent import-gpx ./ride.gpx \
 ```
 
 Use the original URL and attribution when known. Import does not fetch or validate the remote page or establish export rights. URL validation only accepts supported HTTPS source hosts and rejects credentials, query strings, fragments, private endpoints and nonstandard ports. Unknown provenance remains `unknown`; ratings and popularity are never invented.
+
+Search your imported catalog without contacting a route-sharing account:
+
+```bash
+uv run outdoor-agent search --provider local --source-type community \
+  --near "52.09,5.12" --radius-km 30 --activity gravel \
+  --distance-km 20:35 --date 2026-10-11 --limit 5 --json
+```
+
+This searches only saved routes with explicitly supplied community provenance. It does not crawl a public catalog or independently establish authorship or a prior ride. An empty catalog returns setup instructions. Coordinate origins and undated local searches make no external calls; dated searches fetch closure sources unless offline or an explicit fixture is selected.
 
 GPX tracks, routes and disconnected segments are preserved separately. Distance uses WGS84 geodesics and excludes gaps. Invalid coordinates, unsafe XML, oversized files and excessive point counts are rejected. Geometry is not silently joined, repaired or simplified.
 
@@ -93,6 +106,8 @@ uv run outdoor-agent recheck \
 
 Dates are interpreted as the local calendar day in `default_timezone` (default `Europe/Amsterdam`), including 23- or 25-hour DST days. A datetime denotes an instant. Naive local datetimes must be unambiguous and existent; ambiguous or nonexistent DST times are rejected and require an explicit UTC offset. Date precision and timezone are retained in results.
 
+Add `--osm-restrictions` to `check-closures` or `recheck` to query bounded OSM access/construction tags near the selected route. These tags have unknown temporal validity and conditional rules remain uncertain; they supplement road feeds and never prove full trail coverage. Reports expose each source's last successful refresh, publication age, cache state, ETag and Last-Modified.
+
 Possible statuses include `known_conflict`, `possible_conflict`, `no_known_conflict`, `coverage_unknown`, and `check_failed`. A feed outage or unresolved location cannot be treated as safe, and `no_known_conflict` does not guarantee a route is open. Partial results are returned with warnings; add `--strict` to exit 6 after emitting them. Each check stores a stable comparison against the previous finding set. SQLite schema version 2 migrates older state transactionally; back up the SQLite database together with its GPX artifacts.
 
 ## Optional Google Places enrichment
@@ -116,7 +131,12 @@ uv run outdoor-agent export \
   --route-id local:YOUR_ROUTE_ID \
   --format gpx \
   --output ./exports/route.gpx \
+  --dry-run \
   --json
+
+# After reviewing the route/path, commit that local export.
+uv run outdoor-agent export --route-id local:YOUR_ROUTE_ID \
+  --output ./exports/route.gpx --confirm --json
 
 uv run outdoor-agent deliver \
   --route-id local:YOUR_ROUTE_ID \
@@ -134,7 +154,7 @@ uv run outdoor-agent deliver \
   --json
 ```
 
-Export preserves original imported GPX bytes when available. An OSM route export encodes the currently mapped geometry into a new GPX; it is not an original provider GPX and disconnected segments stay separate. Ride with GPS GPX bytes are exported only through the authenticated provider endpoint when permitted. The export command will not overwrite an existing file unless `--overwrite` is supplied.
+Export now defaults to a read-only plan. Use `--confirm` to write the reviewed path; `--confirm --overwrite` explicitly permits replacing different bytes. Export preserves original imported GPX bytes when available. An OSM route export encodes the currently mapped geometry into a new GPX; it is not an original provider GPX and disconnected segments stay separate. Ride with GPS GPX bytes are exported only through the authenticated provider endpoint when permitted. The export command will not overwrite an existing file unless `--overwrite` is supplied.
 
 Delivery is a local manual handoff. The default and `--dry-run` report a plan; `--confirm` writes a local GPX and records local preparation. The account option is only a human-readable label. No Ride with GPS pin, COROS account submission, or watch sync occurs. Results report `watch_sync_unverified`; follow the instructions in the COROS app and verify the route on the device yourself.
 
@@ -181,7 +201,7 @@ Information commands support `--json` and emit one versioned response object on 
 
 ## OpenClaw
 
-Copy or symlink [skills/openclaw/outdoor-routes](skills/openclaw/outdoor-routes) into `<OpenClaw workspace>/skills/outdoor-routes`. Set the project root once in the skill instructions (for example `/srv/outdoor-agent`); commands use `uv run --project /srv/outdoor-agent outdoor-agent ...` from any working directory. The skill confirms delivery preparation, honors requested imports and exports, distinguishes official mapped trails from community routes, and treats unknown closure coverage conservatively. The file follows the documented OpenClaw skill layout; loading it on the target host remains an operator integration check.
+Copy [skills/openclaw/outdoor-routes](skills/openclaw/outdoor-routes) into `<OpenClaw workspace>/skills/outdoor-routes`. A symlink resolving outside configured skill roots requires an explicitly trusted `skills.load.allowSymlinkTargets` target. Set the project root once in the skill instructions (for example `/srv/outdoor-agent`); commands use `uv run --project /srv/outdoor-agent outdoor-agent ...` from any working directory. The skill confirms delivery preparation, honors requested imports and exports, distinguishes official mapped trails from community routes, and treats unknown closure coverage conservatively. The file follows the documented OpenClaw skill layout; loading it on the target host remains an operator integration check.
 
 ## Development and operations
 
@@ -205,3 +225,5 @@ OUTDOOR_AGENT_LIVE_TESTS=1 uv run pytest -m live
 
 See [the completed CLI smoke demo](docs/cli-demo.md) for dated live evidence, and
 [deployment and prompt recipes](docs/operations.md) for an SSH/OpenClaw installation.
+
+The [spec acceptance matrix](docs/spec-acceptance.md) records implemented requirements and external verification gates. Provider `raw_metadata` is scrubbed of credentials/contact details, stripped of URL credentials/query strings, and bounded to 32 fields, 512 characters per value and 4 KiB total. Source attribution and original GPX bytes remain intact.

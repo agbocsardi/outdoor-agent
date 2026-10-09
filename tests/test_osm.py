@@ -9,6 +9,7 @@ import pytest
 from outdoor_agent.config import load_settings
 from outdoor_agent.errors import OutdoorError
 from outdoor_agent.models.routes import Activity
+from outdoor_agent.providers.base import RouteDetailProvider, RouteExportProvider
 from outdoor_agent.providers.http import HTTPClient
 from outdoor_agent.providers.osm import OSMProvider, reconstruct_members, relation_to_route
 
@@ -57,6 +58,35 @@ def test_reconstructs_unmarked_reversed_way_without_bridging() -> None:
     )
     assert nested == []
     assert nested_quality == "incomplete"
+
+
+def test_relation_records_only_conservative_member_grade_separation_clues() -> None:
+    element = {
+        "type": "relation",
+        "id": 202,
+        "tags": {"route": "hiking", "name": "Clue route"},
+        "members": [
+            {
+                "type": "way",
+                "role": "",
+                "tags": {"bridge": "yes", "layer": "1"},
+                "geometry": [{"lon": 5, "lat": 52}, {"lon": 5.001, "lat": 52}],
+            },
+            {
+                "type": "way",
+                "role": "",
+                "tags": {"layer": "1"},
+                "geometry": [{"lon": 5.001, "lat": 52}, {"lon": 5.002, "lat": 52}],
+            },
+        ],
+    }
+    route = relation_to_route(element)
+    assert route.raw_metadata["bridge_tunnel"] == "mixed_or_present"
+    assert route.raw_metadata["layer"] == "1"
+
+    element["members"][1]["tags"]["layer"] = "0"
+    mixed = relation_to_route(element)
+    assert "layer" not in mixed.raw_metadata
 
 
 @pytest.mark.asyncio
@@ -161,3 +191,16 @@ def test_query_rejects_unbounded_or_invalid_boxes() -> None:
 
     with pytest.raises(OutdoorError):
         overpass_query((-91, -181, 91, 181))
+
+
+@pytest.mark.asyncio
+async def test_osm_implements_typed_detail_and_export_protocols() -> None:
+    settings = load_settings()
+    async with HTTPClient(
+        settings, transport=httpx.MockTransport(lambda r: httpx.Response(200))
+    ) as http:
+        provider: OSMProvider = OSMProvider(settings, http)
+        detail: RouteDetailProvider = provider
+        exporter: RouteExportProvider = provider
+        assert detail.declaration.provider == "osm"
+        assert exporter.declaration.provider == "osm"

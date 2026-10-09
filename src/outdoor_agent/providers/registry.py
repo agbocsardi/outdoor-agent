@@ -54,8 +54,8 @@ def registry() -> list[Provider]:
             implemented=True,
             auth_required=False,
             activities=list(Activity),
-            coverage="User-supplied GPX only; no closure coverage.",
-            notes="No network calls. Import provenance is unknown unless supplied by the user.",
+            coverage="Saved/imported route records in this user's private catalog; no closure coverage.",
+            notes="No network calls. User-supplied community provenance is not independently verified.",
             capabilities={
                 "inspect_gpx": capability("supported", "Bounded local parsing, tested offline."),
                 "import_gpx": capability(
@@ -63,6 +63,10 @@ def registry() -> list[Provider]:
                 ),
                 "discover_public": capability(
                     "unsupported", "Local files are not a community catalog."
+                ),
+                "discover_saved": capability(
+                    "supported",
+                    "Searches only records explicitly imported or saved in the user's private RouteStore; no fixture scanning or public catalog access.",
                 ),
             },
         ),
@@ -121,6 +125,11 @@ def registry() -> list[Provider]:
                 "get_metadata": capability(
                     "supported",
                     "Bounded relation reads implemented; OSM attribution and ODbL retained.",
+                    "https://wiki.openstreetmap.org/wiki/Overpass_API",
+                ),
+                "check_restrictions": capability(
+                    "degraded",
+                    "A bounded read-only Overpass probe returned one live snapshot with 599 restriction events on 2026-10-09. Tag timing and trail-closure coverage remain incomplete and unknown.",
                     "https://wiki.openstreetmap.org/wiki/Overpass_API",
                 ),
             },

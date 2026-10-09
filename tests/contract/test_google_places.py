@@ -83,7 +83,9 @@ async def test_search_uses_narrow_mask_budget_and_redacted_output(
         requests.append(request)
         invalid_coordinates = place("places/invalid-coordinates")
         invalid_coordinates["location"] = {"latitude": 91, "longitude": 4.9}
-        return httpx.Response(200, json={"places": [place(), invalid_coordinates]})
+        no_maps_link = place("places/no-maps-link")
+        no_maps_link.pop("googleMapsUri")
+        return httpx.Response(200, json={"places": [place(), invalid_coordinates, no_maps_link]})
 
     client = HTTPClient(settings(tmp_path), transport=httpx.MockTransport(handler))
     fetch_attempts: list[int] = []
@@ -104,8 +106,11 @@ async def test_search_uses_narrow_mask_budget_and_redacted_output(
     body = json.loads(requests[0].content)
     assert body["includedTypes"] == ["tourist_attraction"]
     assert body["locationRestriction"]["circle"]["radius"] == 500
-    assert len(result.places) == 1
+    assert len(result.places) == 2
     assert result.places[0].name == "Canal viewpoint"
+    assert result.places[0].source_url == result.places[0].google_maps_uri
+    no_link_place = next(item for item in result.places if item.id == "places/no-maps-link")
+    assert no_link_place.source_url is None
     output = result.model_dump_json()
     assert "SECRET-KEY" not in output
     assert "rating" not in output

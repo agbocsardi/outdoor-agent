@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
 from pyproj import Geod
 
+from outdoor_agent.models.closures import ClosureReport
 from outdoor_agent.models.routes import Activity, Coordinate, Route, SourceType
 
 GEOD = Geod(ellps="WGS84")
@@ -33,6 +35,7 @@ class ScoredRoute:
     explanations: list[str]
     aliases: list[str]
     provenance: list[SourceProvenance]
+    closure: ClosureReport | None = None
 
 
 def rank_routes(
@@ -45,11 +48,14 @@ def rank_routes(
     distance_max_m: float | None,
     loop: str,
     weights: dict[str, float],
+    closure_reports: Mapping[str, ClosureReport] | None = None,
+    shape: str = "any",
 ) -> list[ScoredRoute]:
     """Rank only observable factors; absent popularity/freshness stays out of denominator."""
     deduped = deduplicate_routes(routes)
     ranked: list[ScoredRoute] = []
     for route, aliases, provenance in deduped:
+        closure = (closure_reports or {}).get(route.id)
         if route.start_lat is None or route.start_lon is None:
             continue
         proximity_km = _distance_km(center, (route.start_lon, route.start_lat))
@@ -63,6 +69,10 @@ def rank_routes(
         ):
             continue
         if loop == "required" and route.is_loop is not True:
+            continue
+        if shape == "loop" and route.is_loop is not True:
+            continue
+        if shape == "point_to_point" and route.is_loop is not False:
             continue
         factors: dict[str, float] = {
             "proximity": max(0.0, 1.0 - proximity_km / radius_km),
@@ -88,25 +98,72 @@ def rank_routes(
                 else "No distance preference was supplied; no length score was applied."
             )
         explanations.append(f"Activity match score is {factors['activity']:.2f}.")
-        if loop != "any" and route.is_loop is not None:
+        if shape == "loop" and route.is_loop is not None:
+            factors["loop"] = float(route.is_loop)
+            explanations.append("Mapped geometry satisfies the requested loop shape.")
+        elif shape == "any" and loop != "any" and route.is_loop is not None:
             factors["loop"] = float(route.is_loop)
             explanations.append(
                 "Mapped geometry appears to be a loop."
                 if route.is_loop
                 else "Mapped geometry is not a loop."
             )
+        popularity_signals: list[float] = []
         if route.popularity is not None:
-            factors["popularity"] = _bounded_metric(route.popularity.value)
-            explanations.append("A source-provided popularity metric contributed to ranking.")
+            popularity_signals.append(_bounded_metric(route.popularity.value))
+        if route.reviews_count is not None:
+            popularity_signals.append(_bounded_metric(route.reviews_count.value))
+        if popularity_signals:
+            factors["popularity"] = sum(popularity_signals) / len(popularity_signals)
+            if route.popularity is not None and route.reviews_count is not None:
+                explanations.append(
+                    "Source-backed provider popularity and review-count metrics were averaged into the popularity factor."
+                )
+            elif route.reviews_count is not None:
+                explanations.append(
+                    "The provider's source-backed review count contributed to the popularity factor; its source URL and observation time are attached to the metric."
+                )
+            else:
+                explanations.append(
+                    "A source-backed provider popularity metric contributed to ranking."
+                )
         else:
-            explanations.append("Popularity is unavailable and was excluded from the score.")
+            explanations.append(
+                "Popularity and review-count metrics are unavailable and were excluded from the score."
+            )
+        if route.rating is not None:
+            explanations.append(
+                "Rating was excluded because the provider's rating scale is not defined."
+            )
         if route.updated_at is not None:
             age_days = max(0.0, (route.fetched_at - route.updated_at).total_seconds() / 86400)
             factors["freshness"] = math.exp(-age_days / 365.0)
             explanations.append("Freshness uses the provider's last-updated timestamp.")
         else:
             explanations.append("Provider update time is unavailable; freshness was excluded.")
-        explanations.append("Closure risk is unassessed; use check-closures for the planned date.")
+        if closure is None:
+            explanations.append(
+                "Closure risk is unassessed; use check-closures for the planned date."
+            )
+        elif (
+            closure.status == "no_known_conflict"
+            and not closure.unknown_coverage
+            and not closure.stale
+        ):
+            factors["closures"] = 1.0
+            explanations.append(
+                "No known closure conflict was found in the assessed feed coverage."
+            )
+        elif closure.status == "known_conflict":
+            factors["closures"] = 0.0
+            explanations.append("A known closure conflict was found for the requested date.")
+        elif closure.status == "possible_conflict":
+            factors["closures"] = 0.25
+            explanations.append("A possible closure conflict was found; the risk score is reduced.")
+        else:
+            explanations.append(
+                "Closure coverage is unknown or incomplete; it was excluded from the score and must not be read as safe."
+            )
         if weights.get("scenic", 0) > 0:
             explanations.append("Scenic places are not enriched during search and were excluded.")
         denominator = sum(weights.get(key, 0.0) for key in factors)
@@ -116,7 +173,7 @@ def rank_routes(
             else 0.0
         )
         ranked.append(
-            ScoredRoute(route, round(score, 4), factors, explanations, aliases, provenance)
+            ScoredRoute(route, round(score, 4), factors, explanations, aliases, provenance, closure)
         )
     return sorted(ranked, key=lambda item: (-item.score, item.route.name.casefold(), item.route.id))
 

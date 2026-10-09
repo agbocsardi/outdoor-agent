@@ -1,27 +1,28 @@
-"""Typed adapter boundaries; future I/O stays outside deterministic services."""
+"""Typed adapter boundaries; provider I/O stays outside deterministic scoring."""
 
 from typing import Protocol
 
-from outdoor_agent.models.closures import ClosureEvent
+from pydantic import Field
+
 from outdoor_agent.models.routes import Activity, Geometry, GPXArtifact, Model, Route
+from outdoor_agent.providers.ndw import FeedFetchResult
 from outdoor_agent.providers.registry import Provider
 
 
 class SearchCriteria(Model):
     activity: Activity
     bbox: tuple[float, float, float, float]
-    limit: int = 10
+    limit: int = Field(default=10, ge=1, le=200)
 
 
 class SearchResult(Model):
     routes: list[Route]
     warnings: list[str]
+    cached: bool = False
+    stale: bool = False
 
 
-class ClosureFeedResult(Model):
-    events: list[ClosureEvent]
-    coverage: str
-    warnings: list[str]
+ClosureFeedResult = FeedFetchResult
 
 
 class RouteDiscoveryProvider(Protocol):
@@ -52,7 +53,7 @@ class ClosureProvider(Protocol):
 
 class Place(Model):
     name: str
-    source_url: str
+    source_url: str | None = None
 
 
 class PlaceEnrichmentProvider(Protocol):

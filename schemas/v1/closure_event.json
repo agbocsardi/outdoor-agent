@@ -313,6 +313,23 @@
       },
       "title": "Restriction Evidence",
       "type": "array"
+    },
+    "mode_evidence": {
+      "default": "unknown",
+      "enum": [
+        "explicit",
+        "scope",
+        "unknown"
+      ],
+      "title": "Mode Evidence",
+      "type": "string"
+    },
+    "grade_separation_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Grade Separation Evidence",
+      "type": "array"
     }
   },
   "required": [

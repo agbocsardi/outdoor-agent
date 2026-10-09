@@ -38,6 +38,8 @@ class ClosureEvent(Model):
     timing_quality: Literal["precise", "approximate", "unknown"] = "unknown"
     location_reference_type: str | None = None
     restriction_evidence: list[str] = Field(default_factory=list)
+    mode_evidence: Literal["explicit", "scope", "unknown"] = "unknown"
+    grade_separation_evidence: list[str] = Field(default_factory=list)
 
 
 class ClosureFinding(Model):
@@ -63,6 +65,20 @@ class ClosureSourceError(Model):
     message: str
 
 
+class ClosureSourceFreshness(Model):
+    """Per-source refresh and feed publication provenance."""
+
+    source: str
+    last_successful_refresh: datetime | None = None
+    publication_at: datetime | None = None
+    etag: str | None = None
+    last_modified: str | None = None
+    from_cache: bool = False
+    stale: bool = False
+    refresh_age_seconds: float | None = Field(default=None, ge=0)
+    publication_age_seconds: float | None = Field(default=None, ge=0)
+
+
 class ClosureReport(Model):
     """Conservative route assessment plus the feed provenance needed to interpret it."""
 
@@ -80,6 +96,7 @@ class ClosureReport(Model):
     warnings: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
     source_errors: list[ClosureSourceError] = Field(default_factory=list)
+    source_freshness: list[ClosureSourceFreshness] = Field(default_factory=list)
     source_ages_seconds: dict[str, float | None] = Field(default_factory=dict)
     fetched_at: datetime | None = None
     source_age_seconds: float | None = Field(default=None, ge=0)

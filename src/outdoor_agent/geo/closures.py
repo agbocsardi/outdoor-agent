@@ -172,7 +172,7 @@ def classify_match(
 ) -> tuple[str, bool | None, str, list[str]]:
     modes = _activity_modes(route.activity)
     mode_overlap: bool | None = None
-    if modes is not None and event.affected_modes:
+    if modes is not None and event.affected_modes and event.mode_evidence == "explicit":
         mode_overlap = bool(modes.intersection(event.affected_modes))
     elif modes is not None:
         mode_overlap = None
@@ -220,6 +220,22 @@ def classify_match(
             "A directional restriction is present; route direction was not resolved."
         )
 
+    grade_text = " ".join(
+        [
+            *event.grade_separation_evidence,
+            event.description,
+            *(str(value) for value in route.raw_metadata.values() if value is not None),
+        ]
+    ).lower()
+    grade_separation_unresolved = any(
+        clue in grade_text
+        for clue in ("bridge", "overpass", "underpass", "tunnel", "viaduct", "layer=")
+    )
+    if grade_separation_unresolved and match.overlap_m > 0:
+        limitations.append(
+            "Bridge/tunnel or level evidence is present, but the route and event level relation is unresolved."
+        )
+
     text = " ".join(
         [event.description, event.restriction_type, *event.restriction_evidence]
     ).lower()
@@ -254,6 +270,7 @@ def classify_match(
         and event.timing_quality == "precise"
         and explicit_closure
         and not direction_uncertain
+        and not grade_separation_unresolved
     ):
         return (
             "known_conflict",

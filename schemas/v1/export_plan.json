@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "default": "export_planned",
+      "title": "Status",
+      "type": "string"
+    },
+    "route_id": {
+      "title": "Route Id",
+      "type": "string"
+    },
+    "target": {
+      "default": "local_gpx",
+      "title": "Target",
+      "type": "string"
+    },
+    "account": {
+      "default": null,
+      "title": "Account",
+      "type": "null"
+    },
+    "path": {
+      "title": "Path",
+      "type": "string"
+    },
+    "dry_run": {
+      "default": true,
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "overwrite": {
+      "default": false,
+      "title": "Overwrite",
+      "type": "boolean"
+    },
+    "source_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Url"
+    },
+    "side_effects": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Side Effects",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "route_id",
+    "path",
+    "source_url",
+    "side_effects"
+  ],
+  "title": "ExportPlan",
+  "type": "object"
+}

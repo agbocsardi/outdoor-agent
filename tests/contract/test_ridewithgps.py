@@ -7,6 +7,7 @@ import pytest
 
 from outdoor_agent.config import Settings
 from outdoor_agent.errors import OutdoorError
+from outdoor_agent.providers.base import RouteDetailProvider, RouteExportProvider
 from outdoor_agent.providers.http import HTTPClient
 from outdoor_agent.providers.ridewithgps import RideWithGPS
 
@@ -82,15 +83,25 @@ async def test_route_id_rejected_before_network(tmp_path: Path, value: str) -> N
 
 
 @pytest.mark.parametrize("status", [401, 403])
+@pytest.mark.parametrize("operation", ["metadata", "export", "probe"])
 @pytest.mark.asyncio
-async def test_auth_and_permission_denials_redacted(tmp_path: Path, status: int) -> None:
+async def test_auth_and_permission_denials_redacted(
+    tmp_path: Path, status: int, operation: str
+) -> None:
     async with HTTPClient(
         config(tmp_path),
         transport=httpx.MockTransport(lambda r: httpx.Response(status, text="synthetic-token")),
     ) as http:
+        provider = RideWithGPS(http.settings, http)
         with pytest.raises(OutdoorError) as error:
-            await RideWithGPS(http.settings, http).export_bytes("42")
+            if operation == "metadata":
+                await provider.get("42")
+            elif operation == "probe":
+                await provider.probe_auth()
+            else:
+                await provider.export_bytes("42")
     assert error.value.exit_code == 3
+    assert error.value.code == ("AUTH_EXPIRED" if status == 401 else "PERMISSION_DENIED")
     assert "synthetic-token" not in str(error.value)
 
 
@@ -131,3 +142,16 @@ async def test_auth_probe_uses_documented_current_user_endpoint(tmp_path: Path) 
     assert result["state"] == "authenticated"
     assert result["account_reference"] != "17"
     assert "private@example.com" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_ridewithgps_implements_typed_detail_and_export_protocols(tmp_path: Path) -> None:
+    settings = config(tmp_path)
+    async with HTTPClient(
+        settings, transport=httpx.MockTransport(lambda r: httpx.Response(200))
+    ) as http:
+        provider: RideWithGPS = RideWithGPS(settings, http)
+        detail: RouteDetailProvider = provider
+        exporter: RouteExportProvider = provider
+        assert detail.declaration.provider == "ridewithgps"
+        assert exporter.declaration.provider == "ridewithgps"

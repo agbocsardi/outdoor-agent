@@ -1,6 +1,6 @@
 ---
 name: outdoor-routes
-description: Discover mapped outdoor routes, inspect and save GPX, assess closure evidence, enrich with opted-in places, and prepare a manual COROS GPX handoff.
+description: Find existing saved community routes and mapped trails, inspect and save GPX, assess closure evidence, enrich with opted-in places, and prepare a manual COROS GPX handoff.
 metadata: {"openclaw":{"requires":{"bins":["uv"]}}}
 ---
 
@@ -33,14 +33,14 @@ preferences:
 ```bash
 uv run --project /srv/outdoor-agent outdoor-agent search \
   --near "Utrecht, Netherlands" --radius-km 30 --activity gravel \
-  --distance-km 20:35 --loop preferred --limit 5 --json
+  --distance-km 20:35 --loop preferred --date 2026-10-11 --limit 5 --json
 ```
 
 Search results from OSM are labeled `official_trail` and linked to their OSM route
 relations. This means mapped route relation; it does not mean community review,
 proof of a prior ride, access permission, or current trail status. No public
 community-route search provider is configured. If the user asks for community
-routes only, explain that search returns a typed unavailable error; do not present
+routes only from public providers, explain that search returns a typed unavailable error; do not present
 OSM or fixtures as community alternatives. In mixed/default search, describe OSM
 results as mapped official-trail records and state the community-catalog warning.
 
@@ -66,6 +66,8 @@ uv run --project /srv/outdoor-agent outdoor-agent import-gpx "/safe/path/ride.gp
   --source-type community --attribution "Verified route creator" --json
 ```
 
+Search entitled GPX routes saved with community provenance using `search --provider local --source-type community --near "52.09,5.12" --activity gravel --date 2026-10-11 --json`. This is a private saved catalog, not public discovery or independent proof of authorship/riding. Dated search assesses closures before ranking; inspect the full evidence for final candidates.
+
 Only supply source type and attribution when the source supports them. GPX alone
 does not prove community authorship. Original imported bytes are preserved locally;
 do not share personal track details in chat or logs without the user's request.
@@ -78,6 +80,8 @@ Use the user's planned date and activity. For live checks, omit `--feed-file`:
 uv run --project /srv/outdoor-agent outdoor-agent check-closures \
   --route-id osm:relation:93841 --date 2026-10-11 --activity hiking --json
 ```
+
+Optionally use `--osm-restrictions` to supplement NDW with mapped access/construction tags; their timing and completeness remain unknown.
 
 Use `--feed-file` only when the user explicitly asks to assess a supplied local
 feed or fixture; that run is labeled `fixture_mode` and is not live safety evidence.
@@ -124,6 +128,16 @@ uv run --project /srv/outdoor-agent outdoor-agent places \
 ```
 
 ## Export and COROS manual handoff
+
+Export defaults to a read-only plan. Show the route, local path and effects, obtain approval, then use `--confirm`:
+
+```bash
+uv run --project /srv/outdoor-agent outdoor-agent export --route-id local:YOUR_ROUTE_ID \
+  --output /safe/path/route.gpx --dry-run --json
+# After approval:
+uv run --project /srv/outdoor-agent outdoor-agent export --route-id local:YOUR_ROUTE_ID \
+  --output /safe/path/route.gpx --confirm --json
+```
 
 Export GPX only when requested. Existing output files are protected; use
 `--overwrite` only when the user has requested replacement. Original imported GPX

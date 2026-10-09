@@ -1,13 +1,14 @@
 import sqlite3
 from pathlib import Path
 
+import httpx
 import pytest
 
 from outdoor_agent.config import Settings
 from outdoor_agent.errors import OutdoorError
 from outdoor_agent.geo.gpx import inspect_gpx
 from outdoor_agent.models.routes import Geometry, Route, SourceType
-from outdoor_agent.services.delivery import export_route, prepare_handoff
+from outdoor_agent.services.delivery import export_route, load_route, prepare_handoff
 from outdoor_agent.storage.db import RouteStore
 
 
@@ -104,6 +105,98 @@ async def test_export_refuses_unapproved_overwrite(tmp_path: Path, example_gpx: 
     assert output.read_bytes() == b"private existing file"
     await export_route(settings, inspection.route.id, output, overwrite=True)
     assert output.read_bytes() == example_gpx.read_bytes()
+
+
+@pytest.mark.asyncio
+async def test_ridewithgps_export_dispatch_preserves_original_provider_bytes(
+    tmp_path: Path, example_gpx: Path, monkeypatch
+) -> None:
+    from outdoor_agent.services import delivery
+
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        ride_api_key="synthetic-key",
+        ride_auth_token="synthetic-token",
+    )
+    route = Route(
+        id="ridewithgps:42",
+        provider="ridewithgps",
+        provider_route_id="42",
+        source_url="https://ridewithgps.com/routes/42",
+        source_type=SourceType.community,
+        attribution="Ride with GPS route creator #17",
+        name="Cached route",
+        geometry=Geometry(type="LineString", coordinates=[(5, 52), (5.001, 52)]),
+        gpx_access="unverified",
+    )
+    store = RouteStore(settings.data_dir)
+    store.save_route(route)
+    payload = example_gpx.read_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/routes/42.gpx"
+        assert request.headers["x-rwgps-api-key"] == "synthetic-key"
+        assert request.headers["x-rwgps-auth-token"] == "synthetic-token"
+        return httpx.Response(200, content=payload)
+
+    original_http = delivery.HTTPClient
+
+    class MockClient(original_http):
+        def __init__(self, config: Settings) -> None:
+            super().__init__(config, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(delivery, "HTTPClient", MockClient)
+    output = tmp_path / "rwgps-export.gpx"
+    result = await export_route(settings, route.id, output)
+    assert output.read_bytes() == payload
+    assert result.original_bytes is True
+    assert store.artifact_bytes(route.id) == payload
+    assert store.artifact_original(route.id) is True
+    assert store.get_route(route.id).gpx_access == "available"
+
+
+@pytest.mark.asyncio
+async def test_refresh_dispatch_updates_metadata_and_invalidates_cached_gpx(
+    tmp_path: Path, example_gpx: Path, monkeypatch
+) -> None:
+    from outdoor_agent.providers.registry import registry
+    from outdoor_agent.services import delivery
+
+    settings = config(tmp_path)
+    route = Route(
+        id="osm:42",
+        provider="osm",
+        provider_route_id="42",
+        source_url="https://www.openstreetmap.org/relation/42",
+        source_type=SourceType.official_trail,
+        attribution="OSM",
+        name="Stale metadata",
+        geometry=Geometry(type="LineString", coordinates=[(5, 52), (5.001, 52)]),
+        gpx_access="available",
+    )
+    store = RouteStore(settings.data_dir)
+    store.save_route(route, example_gpx.read_bytes())
+    refreshed = route.model_copy(update={"name": "Fresh metadata"})
+
+    class FakeDetail:
+        declaration = next(item for item in registry() if item.provider == "osm")
+
+        async def get(self, route_id: str) -> Route:
+            assert route_id == "osm:42"
+            return refreshed
+
+    monkeypatch.setitem(delivery.DETAIL_PROVIDER_FACTORIES, "osm", lambda s, h: FakeDetail())
+    original_http = delivery.HTTPClient
+
+    class MockClient(original_http):
+        def __init__(self, config: Settings) -> None:
+            super().__init__(config, transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+
+    monkeypatch.setattr(delivery, "HTTPClient", MockClient)
+    loaded = await load_route(settings, route.id, refresh=True)
+    assert loaded.name == "Fresh metadata"
+    assert store.artifact_bytes(route.id) is None
 
 
 def test_schema_one_migration_retains_original_import(tmp_path: Path, example_gpx: Path) -> None:

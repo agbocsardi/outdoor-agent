@@ -30,7 +30,7 @@ uv run outdoor-agent get --route-id osm:relation:11569948 --json
 uv run outdoor-agent check-closures --route-id osm:relation:11569948 \
   --date 2026-10-11 --activity hiking --json
 uv run outdoor-agent export --route-id osm:relation:11569948 \
-  --output /tmp/outdoor-agent-demo/11569948.gpx --json
+  --output /tmp/outdoor-agent-demo/11569948.gpx --confirm --json
 uv run outdoor-agent inspect /tmp/outdoor-agent-demo/11569948.gpx --json
 uv run outdoor-agent deliver --route-id osm:relation:11569948 \
   --target coros --dry-run --json
@@ -65,3 +65,29 @@ A subsequent explicit `get --refresh` encountered transient Overpass server fail
 After bounded retries it returned the redacted, retryable `PROVIDER_UNAVAILABLE`
 error with exit 4; the saved route remained available. This illustrates the
 provider outage path and why a successful public probe is not an uptime guarantee.
+
+## 0.3.0 acceptance pass
+
+The full offline suite passed 270 tests (one opt-in live test skipped), with 90%
+package coverage. uv sync/build/lock, Ruff lint/format and strict mypy passed. The
+0.3.0 wheel ran `doctor --json` from outside the repository. The new saved-catalog
+contract runs an explicitly synthetic community GPX through geographic/shape/date
+filters, closure uncertainty, a dry-run and a confirmed lossless COROS handoff.
+It does not establish public community access or real watch arrival.
+
+A new public dated search was executed without account credentials or paid calls:
+
+```bash
+uv run outdoor-agent search --bbox 52.08,5.11,52.10,5.13 \
+  --activity hiking --date 2026-10-11 --source-type official_trail \
+  --limit 3 --json
+```
+
+It returned schema-valid `partial` output with real attributed OSM relations
+11569948, 11556654 and 18961261. Every returned candidate had a date-specific
+closure summary with `coverage_unknown`; unknown coverage was excluded from the
+closure score. NDW snapshots were fetched/parsed once for the eligible candidate
+batch before the shortlist limit. A separate bounded optional OSM restriction
+probe returned 599 normalized events with no source errors; the events retain
+unknown timing and incomplete trail coverage. See [spec acceptance](spec-acceptance.md)
+for external gates still requiring operator/provider access.

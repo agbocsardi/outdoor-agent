@@ -20,6 +20,7 @@ from outdoor_agent.config import Settings, load_settings
 from outdoor_agent.errors import OutdoorError
 from outdoor_agent.geo.gpx import inspect_gpx, read_gpx
 from outdoor_agent.models.closures import ClosureEvent, ClosureFinding, ClosureReport
+from outdoor_agent.models.delivery import ExportPlan
 from outdoor_agent.models.responses import ErrorDetail, ProviderStatus, Response
 from outdoor_agent.models.routes import Activity, GPXInspection, ImportResult, Route, SourceType
 from outdoor_agent.models.time import parse_window
@@ -333,6 +334,7 @@ class SchemaName(StrEnum):
     discovery = "discovery"
     places = "places"
     export = "export"
+    export_plan = "export_plan"
     handoff = "handoff"
 
 
@@ -349,6 +351,7 @@ def schemas() -> dict[str, dict[str, Any]]:
         "discovery": DiscoveryResult,
         "places": PlacesResult,
         "export": ExportResult,
+        "export_plan": ExportPlan,
         "handoff": HandoffResult,
     }
     return {
@@ -406,11 +409,17 @@ def selected_route(
 @app.command()
 def search(
     ctx: typer.Context,
-    near: str = typer.Option(..., help="Place name or latitude,longitude."),
+    near: str | None = typer.Option(
+        None, help="Place name or latitude,longitude; optional with bbox."
+    ),
     radius_km: float = typer.Option(30, min=0.1, max=100),
     activity: Activity = typer.Option(Activity.hiking),
     distance_km: str | None = typer.Option(None),
     loop: str = typer.Option("preferred"),
+    shape: str = typer.Option("any", help="any, loop or point_to_point; known shape required."),
+    bbox: str | None = typer.Option(None, help="Bounded WGS84 south,west,north,east query extent."),
+    date: str | None = typer.Option(None, help="ISO trip date/time for closure-aware ranking."),
+    feed_file: Path | None = typer.Option(None, help="Explicit closure fixture; requires --date."),
     limit: int = typer.Option(10, min=1, max=100),
     source_type: str = typer.Option(
         "all", help="all, official_trail or community; generated routes excluded."
@@ -424,6 +433,14 @@ def search(
     """Discover real mapped OSM routes; disclose unavailable community catalogs."""
     config = settings(ctx)
     low, high = parse_distance(distance_km)
+    bounds = None
+    if bbox is not None:
+        try:
+            bounds = tuple(float(value) for value in bbox.split(","))
+            if len(bounds) != 4:
+                raise ValueError("Expected four coordinates")
+        except ValueError as exc:
+            raise OutdoorError("INVALID_BOUNDS", "Use --bbox SOUTH,WEST,NORTH,EAST.") from exc
     enabled = [name for name in (provider or ["osm"]) if name not in config.disabled_providers]
     if not enabled:
         raise OutdoorError(
@@ -438,6 +455,10 @@ def search(
                 "distance_min_m": low,
                 "distance_max_m": high,
                 "loop": loop,
+                "shape": shape,
+                "bbox": bounds,
+                "date": date,
+                "feed_file": feed_file,
                 "limit": limit,
                 "source_type": source_type,
                 "providers": enabled,
@@ -534,10 +555,19 @@ def closure_result(
     activity: Activity,
     feed_file: Path | None,
     feed_result: FeedFetchResult | None = None,
+    osm_restrictions: bool = False,
 ) -> tuple[ClosureReport, dict[str, object]]:
     validate_trip_date(config, date)
     report = asyncio.run(
-        assess_route(config, route, date, activity, feed_file=feed_file, feed_result=feed_result)
+        assess_route(
+            config,
+            route,
+            date,
+            activity,
+            feed_file=feed_file,
+            feed_result=feed_result,
+            osm_restrictions=osm_restrictions,
+        )
     )
     value = report.model_dump(mode="json")
     evidence = {
@@ -562,9 +592,7 @@ def closure_result(
             key=lambda item: str(item["id"]),
         ),
     }
-    request_key = (
-        f"{date}|{activity.value}|{'fixture:' + str(feed_file.absolute()) if feed_file else 'live'}"
-    )
+    request_key = f"{date}|{activity.value}|{'fixture:' + str(feed_file.absolute()) if feed_file else 'live'}|osm={osm_restrictions}"
     comparison = RouteStore(config.data_dir).record_check(route.id, request_key, value, evidence)
     return report, comparison
 
@@ -576,6 +604,10 @@ def check_closures(
     route_id: str | None = typer.Option(None),
     date: str = typer.Option(...),
     activity: Activity | None = typer.Option(None),
+    osm_restrictions: bool = typer.Option(
+        False,
+        help="Also query bounded OSM access/construction tags; trail coverage remains incomplete.",
+    ),
     feed_file: Path | None = typer.Option(
         None, help="Explicit local DATEX XML/gzip fixture; output marked fixture_mode."
     ),
@@ -585,7 +617,14 @@ def check_closures(
     """Assess current/planned NDW evidence; unknown coverage never means open."""
     config = settings(ctx)
     route = selected_route(config, gpx, route_id, activity)
-    report, comparison = closure_result(config, route, date, activity or route.activity, feed_file)
+    report, comparison = closure_result(
+        config,
+        route,
+        date,
+        activity or route.activity,
+        feed_file,
+        osm_restrictions=osm_restrictions,
+    )
     partial = (
         report.status in {"coverage_unknown", "check_failed", "possible_conflict"}
         or report.source_status in {"partial", "failed"}
@@ -608,6 +647,9 @@ def recheck(
     route_id: list[str] = typer.Option([], "--route-id"),
     date: str = typer.Option(...),
     activity: Activity | None = typer.Option(None),
+    osm_restrictions: bool = typer.Option(
+        False, help="Also query bounded OSM restriction evidence for each selected route."
+    ),
     feed_file: Path | None = typer.Option(None),
     strict: bool = typer.Option(False),
     json_output: bool = typer.Option(False, "--json"),
@@ -619,13 +661,23 @@ def recheck(
     if not routes:
         raise OutdoorError("ROUTE_NOT_FOUND", "There are no saved routes to recheck.")
     validate_trip_date(config, date)
-    feed_result = asyncio.run(fetch_feeds(config)) if feed_file is None else None
+    feed_result = (
+        asyncio.run(fetch_feeds(config))
+        if feed_file is None and "ndw" not in config.disabled_providers
+        else None
+    )
     results = []
     warnings = []
     partial = False
     for route in routes:
         report, comparison = closure_result(
-            config, route, date, activity or route.activity, feed_file, feed_result
+            config,
+            route,
+            date,
+            activity or route.activity,
+            feed_file,
+            feed_result,
+            osm_restrictions,
         )
         results.append({"assessment": report.model_dump(mode="json"), "comparison": comparison})
         warnings.extend(report.warnings)
@@ -677,14 +729,34 @@ def export(
     format: str = typer.Option("gpx"),
     output_path: Path = typer.Option(..., "--output"),
     overwrite: bool = typer.Option(False),
+    dry_run: bool = typer.Option(False),
+    confirm: bool = typer.Option(False),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Export unchanged imported GPX or permitted source geometry/provider GPX."""
+    """Default dry-run; --confirm exports permitted GPX to the reviewed local path."""
     if format != "gpx":
         raise OutdoorError(
             "EXPORT_FORMAT_UNSUPPORTED", "Only COROS-compatible GPX export is supported.", 5
         )
-    result = asyncio.run(export_route(settings(ctx), route_id, output_path, overwrite=overwrite))
+    if dry_run and confirm:
+        raise OutdoorError("INVALID_ARGUMENTS", "Choose --dry-run or --confirm, not both.")
+    config = settings(ctx)
+    if not confirm:
+        route = RouteStore(config.data_dir).get_route(route_id)
+        plan = ExportPlan(
+            route_id=route_id,
+            path=str(output_path.absolute()),
+            overwrite=overwrite,
+            source_url=route.source_url,
+            side_effects=[
+                "Write a local GPX file and cache the permitted artifact",
+                "Fetch provider GPX only if required and authorized",
+            ],
+            warnings=list(route.warnings),
+        )
+        output(ctx, plan.model_dump(mode="json"), json_output, plan.warnings)
+        return
+    result = asyncio.run(export_route(config, route_id, output_path, overwrite=overwrite))
     output(ctx, result.model_dump(mode="json"), json_output, result.warnings)
 
 

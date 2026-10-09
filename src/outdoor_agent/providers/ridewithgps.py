@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+import tempfile
 from datetime import datetime
 from typing import Any
 
@@ -12,8 +13,9 @@ from outdoor_agent.config import Settings
 from outdoor_agent.errors import OutdoorError
 from outdoor_agent.geo.geometry import distance_m
 from outdoor_agent.geo.gpx import MAX_BYTES, MAX_POINTS, inspect_gpx, validate_source_url
-from outdoor_agent.models.routes import Activity, Geometry, Route, SourceType
-from outdoor_agent.providers.http import HTTPClient
+from outdoor_agent.models.routes import Activity, Geometry, GPXArtifact, Route, SourceType
+from outdoor_agent.providers.http import FetchResult, HTTPClient
+from outdoor_agent.providers.registry import Provider, registry
 
 _ACTIVITY = {
     "cycling:road": Activity.road,
@@ -40,6 +42,9 @@ class RideWithGPS:
     def __init__(self, settings: Settings, http: HTTPClient) -> None:
         self.settings = settings
         self.http = http
+        self.declaration: Provider = next(
+            item for item in registry() if item.provider == "ridewithgps"
+        )
 
     def _headers(self) -> dict[str, str]:
         if not self.settings.ride_api_key or not self.settings.ride_auth_token:
@@ -57,15 +62,33 @@ class RideWithGPS:
             "x-rwgps-auth-token": self.settings.ride_auth_token,
         }
 
+    async def _fetch_authenticated(self, method: str, url: str, *, max_bytes: int) -> FetchResult:
+        headers = self._headers()
+        try:
+            return await self.http.fetch(
+                method,
+                url,
+                provider="ridewithgps",
+                headers=headers,
+                persist=False,
+                ttl=0,
+                max_bytes=max_bytes,
+            )
+        except OutdoorError as exc:
+            if exc.code == "AUTH_REQUIRED":
+                raise OutdoorError(
+                    "AUTH_EXPIRED",
+                    "Configured Ride with GPS credentials were rejected; refresh the credentials securely.",
+                    3,
+                    provider="ridewithgps",
+                ) from exc
+            raise
+
     async def get(self, route_id: str) -> Route:
         value = numeric_route_id(route_id)
-        result = await self.http.fetch(
+        result = await self._fetch_authenticated(
             "GET",
             f"https://ridewithgps.com/api/v1/routes/{value}.json",
-            provider="ridewithgps",
-            headers=self._headers(),
-            persist=False,
-            ttl=0,
             max_bytes=16 * 1024 * 1024,
         )
         try:
@@ -137,13 +160,9 @@ class RideWithGPS:
 
     async def export_bytes(self, route_id: str) -> bytes:
         value = numeric_route_id(route_id)
-        result = await self.http.fetch(
+        result = await self._fetch_authenticated(
             "GET",
             f"https://ridewithgps.com/api/v1/routes/{value}.gpx",
-            provider="ridewithgps",
-            headers=self._headers(),
-            persist=False,
-            ttl=0,
             max_bytes=MAX_BYTES,
         )
         # Entitlement is enforced by the provider; successful bytes must still be valid GPX.
@@ -158,14 +177,19 @@ class RideWithGPS:
             ) from exc
         return result.content
 
+    async def export_gpx(self, route_id: str) -> GPXArtifact:
+        """Return validated original provider bytes in a private temporary artifact.
+
+        The caller owns cleanup of ``path`` after consuming the artifact.
+        """
+        return _temporary_artifact(
+            f"ridewithgps:{numeric_route_id(route_id)}", await self.export_bytes(route_id)
+        )
+
     async def probe_auth(self) -> dict[str, str]:
-        result = await self.http.fetch(
+        result = await self._fetch_authenticated(
             "GET",
             "https://ridewithgps.com/api/v1/users/current",
-            provider="ridewithgps",
-            headers=self._headers(),
-            persist=False,
-            ttl=0,
             max_bytes=1024 * 1024,
         )
         try:
@@ -191,3 +215,22 @@ def _timestamp(value: Any) -> datetime | None:
         return None
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     return parsed if parsed.tzinfo is not None else None
+
+
+def _temporary_artifact(route_id: str, content: bytes) -> GPXArtifact:
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="outdoor-agent-", suffix=".gpx", delete=False
+        ) as file:
+            file.write(content)
+            file.flush()
+            return GPXArtifact(
+                route_id=route_id,
+                path=file.name,
+                sha256=hashlib.sha256(content).hexdigest(),
+                byte_count=len(content),
+            )
+    except OSError as exc:
+        raise OutdoorError(
+            "EXPORT_WRITE_FAILED", "Cannot stage provider GPX artifact locally.", 7
+        ) from exc

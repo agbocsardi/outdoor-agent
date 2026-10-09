@@ -4,12 +4,14 @@ from pathlib import Path
 from defusedxml import ElementTree
 
 from outdoor_agent.providers.ndw import (
+    FeedFetchResult,
     _geometry,
     _location_reference,
     _modes,
     parse_feed,
     parse_fixture,
 )
+from outdoor_agent.providers.ndw_adapter import NDWClosureProvider
 
 
 def test_ndw_decodes_direct_gml_and_keeps_alertc_unresolved() -> None:
@@ -41,17 +43,78 @@ def test_negative_free_text_does_not_claim_bicycle_restriction() -> None:
     record = ElementTree.fromstring(
         b"<record><comment>bicycle allowed; cyclepathopen</comment></record>"
     )
-    assert _modes(record, "RoadOrCarriagewayOrLaneManagement", "bicycle allowed") == ["road"]
+    assert _modes(record, "RoadOrCarriagewayOrLaneManagement", "bicycle allowed") == []
 
 
 def test_explicit_datex_vehicle_type_identifies_bicycle_restriction() -> None:
     record = ElementTree.fromstring(
         b"<record><forVehiclesWithCharacteristicsOf><vehicleType>bicycle</vehicleType></forVehiclesWithCharacteristicsOf></record>"
     )
-    assert _modes(record, "RoadOrCarriagewayOrLaneManagement", "carriagewayClosures") == [
-        "bike",
-        "road",
-    ]
+    assert _modes(record, "RoadOrCarriagewayOrLaneManagement", "carriagewayClosures") == ["bike"]
+
+
+def test_vehicle_type_outside_restricted_characteristics_or_in_exception_is_ignored() -> None:
+    record = ElementTree.fromstring(
+        b"""<record>
+          <vehicleType>bicycle</vehicleType>
+          <forVehiclesWithCharacteristicsOf><vehicleType>car</vehicleType>
+            <exceptVehicles><vehicleType>bicycle</vehicleType></exceptVehicles>
+          </forVehiclesWithCharacteristicsOf>
+        </record>"""
+    )
+    assert _modes(record, "RoadOrCarriagewayOrLaneManagement", "carriagewayClosures") == ["road"]
+
+
+def test_record_scoped_localized_issuer_and_description() -> None:
+    xml = b"""<mc:messageContainer xmlns:mc="http://datex2.eu/schema/3/messageContainer"
+      xmlns:sit="http://datex2.eu/schema/3/situation" xmlns:com="http://datex2.eu/schema/3/common"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" modelBaseVersion="3">
+      <sit:situation id="s"><sit:source><com:sourceName><com:values><com:value xml:lang="nl">Fallback issuer</com:value></com:values></com:sourceName></sit:source>
+       <sit:situationRecord xsi:type="sit:CyclewayClosure" id="r1"><sit:source><com:sourceName><com:values><com:value xml:lang="nl">Issuer one</com:value><com:value xml:lang="en">Issuer 1</com:value></com:values></com:sourceName></sit:source><sit:publicEventName><com:values><com:value xml:lang="nl">Brug afgesloten</com:value></com:values></sit:publicEventName></sit:situationRecord>
+       <sit:situationRecord xsi:type="sit:CyclewayClosure" id="r2"/>
+       <sit:situationRecord xsi:type="sit:CyclewayClosure" id="r3"/>
+      </sit:situation>
+    </mc:messageContainer>"""
+    records = {event.id: event for event in parse_feed(xml).events}
+    assert records["r1"].issuer == "Issuer one"
+    assert "Brug afgesloten" in records["r1"].description
+    assert records["r2"].issuer == "Fallback issuer"
+    assert records["r3"].issuer == "Fallback issuer"
+
+
+def test_recurring_daily_overnight_xml_remains_temporally_unknown() -> None:
+    path = Path(__file__).parents[1] / "fixtures/ndw_recurring.xml"
+    event = parse_fixture(path).events[0]
+    assert event.recurrence
+    assert "22:00:00" in event.recurrence and "06:00:00" in event.recurrence
+    assert event.timing_quality == "unknown"
+
+
+def test_road_record_without_vehicle_restriction_is_scope_only() -> None:
+    xml = b"""<mc:messageContainer xmlns:mc="http://datex2.eu/schema/3/messageContainer"
+      xmlns:sit="http://datex2.eu/schema/3/situation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" modelBaseVersion="3">
+      <sit:situation id="s"><sit:situationRecord xsi:type="sit:RoadOrCarriagewayOrLaneManagement" id="r"/></sit:situation>
+    </mc:messageContainer>"""
+    event = parse_feed(xml).events[0]
+    assert event.affected_modes == []
+    assert event.mode_evidence == "scope"
+
+
+def test_ndw_closure_adapter_preserves_feed_result_and_typed_declaration(tmp_path) -> None:
+    import asyncio
+
+    from outdoor_agent.config import Settings
+
+    expected = FeedFetchResult(snapshots=[], errors=[])
+
+    async def fetcher(settings):
+        return expected
+
+    settings = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
+    provider = NDWClosureProvider(settings, fetcher=fetcher)
+    actual = asyncio.run(provider.list_events((5.0, 52.0, 5.1, 52.1), "2026-10-10", "hiking"))
+    assert actual is expected
+    assert provider.declaration.provider == "ndw"
 
 
 def test_record_limit_checks_before_extending_event_list(monkeypatch) -> None:

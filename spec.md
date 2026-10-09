@@ -715,18 +715,24 @@ A meaningful v1 demo:
 
 ## Implementation status — 2026-10-09
 
-Version 0.2.0 implements the CLI through Phase 5: all command targets, saved route
-metadata, live OSM/Nominatim discovery, transparent ranking/deduplication, authenticated
-documented RWGPS reads/export, NDW direct-GML closure assessment, rechecks and change
-comparisons, opt-in budgeted Google Places, lossless local GPX export, and confirmed,
-audited, idempotent manual COROS GPX handoff. Versioned schemas and the OpenClaw skill
-cover these workflows. See `docs/cli-demo.md` for live and offline verification.
+Version 0.3.0 implements the required CLI command targets and the permitted manual
+provider fallbacks: bounded OSM and local saved-community catalog discovery,
+bbox/point-to-point preferences, transparent deduplication/ranking, dated closure
+ranking, lossless GPX import/export, authenticated documented RWGPS read/export
+adapters, NDW direct-GML analysis, optional OSM access restrictions, saved-route
+rechecks, opt-in budgeted Google Places, and confirmed, audited, idempotent manual
+COROS handoff. Concrete provider adapters implement the typed boundaries; versioned
+schemas and the thin OpenClaw skill cover the workflows. GPX export and delivery
+both default to read-only plans and require `--confirm` to prepare local files.
 
-Provider gates remain explicit: no verified public community-route search is configured;
-OSM results are mapped `official_trail` records. Alert-C references are retained unresolved,
-not falsely decoded, and NDW trail/future coverage is uncertain. Google and authenticated
-RWGPS contracts are tested offline; no paid Google request or credentialed account probe
-was performed. COROS account submission and physical watch arrival are unverified; the
-implemented handoff is manual GPX. OpenClaw host loading, a systemd timer and MCP are
-operator/optional follow-ups. These limits do not silently produce fixture recommendations
-or claims of complete coverage or delivery.
+The acceptance matrix in `docs/spec-acceptance.md` distinguishes code verification
+from external gates. Saved community provenance is supplied by the user; no public
+community-route catalog is verified. OSM relations remain `official_trail`.
+Alert-C references remain unresolved rather than falsely decoded; NDW trail,
+future-horizon and source coverage are uncertain. Configured RWGPS credentials
+rejected by the API yield `AUTH_EXPIRED`, without exposing credentials. No paid
+Google request or authenticated RWGPS account probe was performed. COROS account
+submission, physical watch arrival and loading on a target OpenClaw host remain
+unverified. Timer/MCP and broader provider integrations are optional follow-ups.
+These limitations never silently produce fixture discoveries or claims of complete
+coverage or watch delivery. See `docs/cli-demo.md` for executed verification.

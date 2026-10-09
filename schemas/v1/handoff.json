@@ -23,6 +23,13 @@
       "default": null,
       "title": "Account"
     },
+    "side_effects": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Side Effects",
+      "type": "array"
+    },
     "status": {
       "title": "Status",
       "type": "string"
@@ -55,13 +62,6 @@
       "title": "Already Prepared",
       "type": "boolean"
     },
-    "side_effects": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Side Effects",
-      "type": "array"
-    },
     "instructions": {
       "items": {
         "type": "string"
@@ -84,12 +84,12 @@
   },
   "required": [
     "route_id",
+    "side_effects",
     "status",
     "dry_run",
     "path",
     "source_url",
     "idempotency_key",
-    "side_effects",
     "instructions"
   ],
   "title": "HandoffResult",

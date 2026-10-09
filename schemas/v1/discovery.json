@@ -15,6 +15,72 @@
       "title": "Activity",
       "type": "string"
     },
+    "ClosureAssessmentSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "known_conflict",
+            "possible_conflict",
+            "no_known_conflict",
+            "coverage_unknown",
+            "check_failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "source_status": {
+          "enum": [
+            "ok",
+            "partial",
+            "failed",
+            "fixture"
+          ],
+          "title": "Source Status",
+          "type": "string"
+        },
+        "stale": {
+          "title": "Stale",
+          "type": "boolean"
+        },
+        "unknown_coverage": {
+          "title": "Unknown Coverage",
+          "type": "boolean"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "moderate",
+            "low",
+            "unknown"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "date",
+        "status",
+        "source_status",
+        "stale",
+        "unknown_coverage",
+        "warnings",
+        "confidence"
+      ],
+      "title": "ClosureAssessmentSummary",
+      "type": "object"
+    },
     "DiscoveryProviderStatus": {
       "additionalProperties": false,
       "properties": {
@@ -187,6 +253,17 @@
           },
           "title": "Provenance",
           "type": "array"
+        },
+        "closure_assessment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClosureAssessmentSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

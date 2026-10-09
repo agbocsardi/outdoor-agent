@@ -81,6 +81,7 @@ def test_saved_routes_get_export_and_delivery(
     exported = call(
         [
             "export",
+            "--confirm",
             "--route-id",
             imported,
             "--format",
@@ -285,3 +286,72 @@ def test_batch_recheck_fetches_and_parses_feeds_once(
     result = call(["recheck", "--date", "2026-10-11"])
     assert result["data"]["total"] == 2
     assert calls == 1
+
+
+def test_export_requires_confirmation_and_plan_is_read_only(
+    tmp_path: Path, example_gpx: Path
+) -> None:
+    imported = call(["import-gpx", str(example_gpx)])["data"]["inspection"]["route"]["id"]
+    path = tmp_path / "approved.gpx"
+    planned = call(["export", "--route-id", imported, "--output", str(path)])
+    validate(planned["data"], schemas()["export_plan"])
+    assert planned["data"]["dry_run"] is True
+    assert planned["data"]["target"] == "local_gpx"
+    assert not path.exists()
+    exported = call(["export", "--route-id", imported, "--output", str(path), "--confirm"])
+    assert exported["data"]["status"] == "exported"
+    assert path.read_bytes() == example_gpx.read_bytes()
+
+
+def test_synthetic_saved_community_catalog_discovery_to_approved_handoff(
+    tmp_path: Path, example_gpx: Path
+) -> None:
+    """Explicit fixture import, not a claim of public/live community discovery."""
+    route_id = call(
+        [
+            "import-gpx",
+            str(example_gpx),
+            "--activity",
+            "gravel",
+            "--source-type",
+            "community",
+            "--attribution",
+            "Synthetic test author",
+            "--source-url",
+            "https://ridewithgps.com/routes/12345",
+        ]
+    )["data"]["inspection"]["route"]["id"]
+    fixture = Path(__file__).parents[1] / "fixtures/ndw_closures.xml"
+    shortlisted = call(
+        [
+            "search",
+            "--provider",
+            "local",
+            "--source-type",
+            "community",
+            "--bbox",
+            "52.08,5.11,52.10,5.13",
+            "--activity",
+            "gravel",
+            "--shape",
+            "loop",
+            "--date",
+            "2026-10-11",
+            "--feed-file",
+            str(fixture),
+        ]
+    )
+    validate(shortlisted["data"], schemas()["discovery"])
+    assert shortlisted["data"]["routes"][0]["route"]["id"] == route_id
+    found = shortlisted["data"]["routes"][0]
+    assert found["route"]["source_type"] == "community"
+    assert found["route"]["attribution"] == "Synthetic test author"
+    assert found["closure_assessment"]["source_status"] == "fixture"
+    assert found["closure_assessment"]["unknown_coverage"] is True
+    path = tmp_path / "handoff.gpx"
+    plan = call(["deliver", "--route-id", route_id, "--output", str(path)])
+    assert plan["data"]["dry_run"] is True
+    assert not path.exists()
+    prepared = call(["deliver", "--route-id", route_id, "--output", str(path), "--confirm"])
+    assert prepared["data"]["watch_status"] == "watch_sync_unverified"
+    assert path.read_bytes() == example_gpx.read_bytes()

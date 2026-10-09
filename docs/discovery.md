@@ -5,7 +5,7 @@
 The discovery service can search mapped OpenStreetMap route relations through
 Overpass. Those records are labeled `official_trail`: a mapped hiking or cycling
 route is not evidence that a community rode it, recommends it, or reviewed it.
-There is no verified public community-route catalog configured. A community-only
+There is no verified public community-route catalog configured. A public community-only
 request returns `COMMUNITY_DISCOVERY_UNAVAILABLE`; a mixed/default request can
 return OSM trails with a warning about this limitation. No fixture is used as a
 live result.
@@ -82,6 +82,11 @@ provider bonus. Ranking is a sorting aid and does not establish route quality or
 current accessibility.
 
 
-Closure risk is explicitly unassessed during discovery. Use `check-closures` with the
-planned trip date before choosing a route. Scenic enrichment is optional and is not
+Undated search leaves closure risk unassessed. Dated search (`--date`) fetches the current/planned feeds once, assesses eligible candidates before applying the result limit, and includes closure status/confidence in each result. Known conflicts lower the closure factor; unknown coverage remains outside the denominator and is never a safety claim. Use `check-closures` for full per-event evidence before choosing a route. Scenic enrichment is optional and is not
 performed by search; unavailable factors remain outside the score denominator.
+
+## Saved community catalog and geographic criteria
+
+`--provider local --source-type community` searches saved/imported routes with explicit community provenance. It uses the same typed discovery interface and retains original URLs, attribution and unknown metrics. It does not query a public community catalog or establish that someone rode the route. There is no fixture-directory fallback. Empty catalogs return import instructions. Use only GPX files you are entitled to retain.
+
+`--bbox SOUTH,WEST,NORTH,EAST` controls the query extent, bounded within 100 km of its midpoint. Without `--near` its midpoint is the start-proximity origin; `--radius-km` still filters starts. `--shape loop` and `--shape point_to_point` require observable geometry evidence for the shape.

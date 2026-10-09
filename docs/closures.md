@@ -76,3 +76,11 @@ Batch `recheck` fetches and parses the live feeds once and reuses those snapshot
 all selected routes. Comparison hashes include event geometry, interval, issuer,
 restriction, direction, severity and findings, but exclude changing observation and
 publication timestamps; refreshing an unchanged feed does not create an alert.
+
+## Additional evidence and freshness
+
+`--osm-restrictions` opts into a bounded Overpass query for access, foot, bicycle and construction tags. At most 1,000 ways and 16 MiB are accepted; truncation and outages retain unknown coverage. Explicit mode exemptions override generic access tags. Conditional schedules are retained without guessing their grammar, and untimed restrictions remain possible conflicts. Bridge, tunnel and layer clues prevent a two-dimensional overlap from becoming a known closure. OSM attribution and source links accompany events; no absence of tags proves a trail open.
+
+Reports now expose `source_freshness`: last successful fetch, publication timestamp/age, cache state, ETag and Last-Modified. A usable HTTP Last-Modified is fallback freshness evidence when DATEX publicationTime is absent; collection time alone does not prove publication freshness. Structured DATEX recurrence fields and localized per-record descriptions/issuers are retained. Only explicit incompatible vehicle restrictions exclude an event: road/carriageway scope without vehicle evidence cannot establish car-only applicability.
+
+An additional read-only Overpass probe on 2026-10-09 used Utrecht bbox west/south/east/north `5.11,52.08,5.13,52.10`: the bounded restriction request returned 599 normalized access/construction events, with no source errors and no cache reuse. This verifies retrieval/parsing at that time; it does not verify current access on any particular trail.

@@ -1,6 +1,6 @@
 [project]
 name = "outdoor-agent"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local, evidence-aware outdoor route tools for agents"
 readme = "README.md"
 license = "MIT"

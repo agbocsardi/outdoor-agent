@@ -240,6 +240,23 @@
           },
           "title": "Restriction Evidence",
           "type": "array"
+        },
+        "mode_evidence": {
+          "default": "unknown",
+          "enum": [
+            "explicit",
+            "scope",
+            "unknown"
+          ],
+          "title": "Mode Evidence",
+          "type": "string"
+        },
+        "grade_separation_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Grade Separation Evidence",
+          "type": "array"
         }
       },
       "required": [
@@ -421,6 +438,107 @@
         "message"
       ],
       "title": "ClosureSourceError",
+      "type": "object"
+    },
+    "ClosureSourceFreshness": {
+      "additionalProperties": false,
+      "description": "Per-source refresh and feed publication provenance.",
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "last_successful_refresh": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Successful Refresh"
+        },
+        "publication_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publication At"
+        },
+        "etag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Etag"
+        },
+        "last_modified": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Modified"
+        },
+        "from_cache": {
+          "default": false,
+          "title": "From Cache",
+          "type": "boolean"
+        },
+        "stale": {
+          "default": false,
+          "title": "Stale",
+          "type": "boolean"
+        },
+        "refresh_age_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refresh Age Seconds"
+        },
+        "publication_age_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publication Age Seconds"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "ClosureSourceFreshness",
       "type": "object"
     },
     "Geometry": {
@@ -606,6 +724,13 @@
         "$ref": "#/$defs/ClosureSourceError"
       },
       "title": "Source Errors",
+      "type": "array"
+    },
+    "source_freshness": {
+      "items": {
+        "$ref": "#/$defs/ClosureSourceFreshness"
+      },
+      "title": "Source Freshness",
       "type": "array"
     },
     "source_ages_seconds": {

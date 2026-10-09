@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from outdoor_agent.models.privacy import scrub_metadata
+
 
 def now() -> datetime:
     return datetime.now(UTC)
@@ -93,8 +95,18 @@ class Route(Model):
     geometry_quality: Literal["complete", "disconnected", "incomplete", "unknown"] = "unknown"
     gpx_access: Literal["available", "restricted", "unverified", "unavailable"] = "unverified"
     warnings: list[str] = Field(default_factory=list)
-    # Phase 1 retains no opaque metadata or credentials from providers.
+    # Only bounded, scrubbed scalar metadata is retained; no provider response blobs.
     raw_metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def private_metadata(self) -> "Route":
+        sanitized = scrub_metadata(self.raw_metadata)
+        if sanitized != self.raw_metadata:
+            self.raw_metadata = sanitized
+            warning = "Provider metadata was bounded or redacted before local storage."
+            if warning not in self.warnings:
+                self.warnings.append(warning)
+        return self
 
 
 class Waypoint(Model):
