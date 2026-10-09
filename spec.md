@@ -715,7 +715,7 @@ A meaningful v1 demo:
 
 ## Implementation status — 2026-10-09
 
-Version 0.3.0 implements the required CLI command targets and the permitted manual
+Version 0.3.1 implements the required CLI command targets and the permitted manual
 provider fallbacks: bounded OSM and local saved-community catalog discovery,
 bbox/point-to-point preferences, transparent deduplication/ranking, dated closure
 ranking, lossless GPX import/export, authenticated documented RWGPS read/export
@@ -736,3 +736,13 @@ submission, physical watch arrival and loading on a target OpenClaw host remain
 unverified. Timer/MCP and broader provider integrations are optional follow-ups.
 These limitations never silently produce fixture discoveries or claims of complete
 coverage or watch delivery. See `docs/cli-demo.md` for executed verification.
+
+
+The 0.3.1 review fixes bounded closure summaries for unlocatable nationwide records,
+rejects invalid OSM member geometry without connecting surviving coordinates, and
+quarantines legacy OSM geometry/artifacts until refreshed. Search exposes coverage
+and filter diagnostics. A permitted, attributed club-published 26.2 km gravel loop
+near Den Bosch was searched from the saved catalog, checked against live NDW/OSM
+evidence and prepared losslessly for manual COROS import. Its source flags cycling
+restrictions and its live assessment has possible conflicts and unknown coverage;
+this verifies the software workflow but does not establish a ride-ready route.

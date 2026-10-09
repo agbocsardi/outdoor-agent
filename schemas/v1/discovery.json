@@ -81,6 +81,85 @@
       "title": "ClosureAssessmentSummary",
       "type": "object"
     },
+    "DiscoveryCoverage": {
+      "additionalProperties": false,
+      "description": "Machine-readable counts describing provider coverage and local filtering.",
+      "properties": {
+        "provider_candidates": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Provider Candidates",
+          "type": "integer"
+        },
+        "source_type_excluded": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Source Type Excluded",
+          "type": "integer"
+        },
+        "unique_candidates": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Unique Candidates",
+          "type": "integer"
+        },
+        "missing_start": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Missing Start",
+          "type": "integer"
+        },
+        "outside_radius": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Outside Radius",
+          "type": "integer"
+        },
+        "unknown_distance_with_distance_filter": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Unknown Distance With Distance Filter",
+          "type": "integer"
+        },
+        "outside_distance_range": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Outside Distance Range",
+          "type": "integer"
+        },
+        "shape_excluded": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Shape Excluded",
+          "type": "integer"
+        },
+        "geometry_not_complete": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Geometry Not Complete",
+          "type": "integer"
+        },
+        "eligible": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Eligible",
+          "type": "integer"
+        },
+        "returned": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Returned",
+          "type": "integer"
+        },
+        "provider_truncated": {
+          "default": false,
+          "title": "Provider Truncated",
+          "type": "boolean"
+        }
+      },
+      "title": "DiscoveryCoverage",
+      "type": "object"
+    },
     "DiscoveryProviderStatus": {
       "additionalProperties": false,
       "properties": {
@@ -667,6 +746,9 @@
       },
       "title": "Provider Status",
       "type": "array"
+    },
+    "coverage": {
+      "$ref": "#/$defs/DiscoveryCoverage"
     },
     "warnings": {
       "items": {

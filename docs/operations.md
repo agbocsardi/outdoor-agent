@@ -21,6 +21,20 @@ rejected rather than downgraded. Refreshing provider metadata invalidates its
 cached export; original local imports remain immutable. Changed route revisions
 receive distinct default handoff files and audit identities.
 
+When upgrading from 0.3.0 or earlier, saved OSM geometry and cached OSM exports
+require re-normalization before use. Run:
+
+```bash
+uv run --project /srv/outdoor-agent outdoor-agent get \
+  --route-id osm:relation:YOUR_RELATION_ID --refresh --json
+```
+
+An unavailable provider leaves the legacy geometry quarantined; do not restore
+the old artifact as a workaround. Original imported local GPX files remain
+available. Search `coverage` counters distinguish unavailable geometry and capped
+provider coverage from actual filter matches; zero results do not prove that no
+gravel loop exists locally.
+
 Install `skills/openclaw/outdoor-routes/SKILL.md` under the OpenClaw workspace's
 `skills/outdoor-routes/` directory and set its fixed project path. Verify loading
 on the target OpenClaw host; the repository validates the CLI and documented

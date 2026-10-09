@@ -36,6 +36,8 @@ SOURCE_HOSTS = frozenset(
         "www.strava.com",
         "openstreetmap.org",
         "www.openstreetmap.org",
+        # This community club explicitly publishes its own GPX downloads.
+        "www.twcdekachelders.nl",
     }
 )
 Point = GPXTrackPoint | GPXRoutePoint | GPXWaypoint

@@ -1,6 +1,53 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
+    "ClosureCoverageSummary": {
+      "additionalProperties": false,
+      "description": "Bounded summary of evidence that cannot be emitted as route-specific findings.",
+      "properties": {
+        "source": {
+          "maxLength": 256,
+          "title": "Source",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "unresolved_location",
+            "route_geometry_unavailable",
+            "route_finding_limit"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "count": {
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "sample_event_ids": {
+          "items": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Sample Event Ids",
+          "type": "array"
+        },
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "reason",
+        "count",
+        "digest"
+      ],
+      "title": "ClosureCoverageSummary",
+      "type": "object"
+    },
     "ClosureEvent": {
       "additionalProperties": false,
       "properties": {
@@ -732,6 +779,21 @@
       },
       "title": "Source Freshness",
       "type": "array"
+    },
+    "coverage_summaries": {
+      "items": {
+        "$ref": "#/$defs/ClosureCoverageSummary"
+      },
+      "maxItems": 12,
+      "title": "Coverage Summaries",
+      "type": "array"
+    },
+    "finding_limit": {
+      "default": 100,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Finding Limit",
+      "type": "integer"
     },
     "source_ages_seconds": {
       "additionalProperties": {

@@ -48,11 +48,27 @@ Relation member ways are reconstructed in their listed order. A `backward` role
 reverses its member geometry; other ways are joined at shared endpoints and may
 be reversed when the endpoints make the connection unambiguous. Disconnected ways
 remain separate lines in a `MultiLineString`. The service never draws a line
-across a gap. Missing member geometry marks the geometry incomplete, so route
-length and loop shape are left unknown. Length for complete or disconnected
-geometry is the sum of WGS84 geodesic segment lengths, excluding gaps. Elevation,
+across a gap. An invalid coordinate rejects the entire member way rather than
+connecting its remaining points. Missing or rejected members mark geometry
+incomplete; disconnected geometry also leaves route length and loop shape unknown.
+Only complete geometry receives a WGS84 geodesic route length. Elevation,
 popularity, rating and review count remain unknown because this query does not
 provide evidence for them. GPX access is `unverified`.
+
+Version 0.3.1 marks safely normalized OSM records with `geometry_normalizer=osm-v2`.
+Older saved OSM records retain identity and provenance but their geometry and
+derived measurements are quarantined. Export and handoff require an explicit
+`get --route-id osm:relation:ID --refresh` first; old cached exports cannot bypass
+this check. Local original GPX imports are unaffected.
+
+The result's `coverage` object counts provider candidates, source exclusions,
+unique candidates, missing starts, radius/distance/shape exclusions, incomplete
+geometry, eligible and returned routes, and provider truncation. Exclusion
+counters can overlap. They explain the available data, not the number of routes
+that exist in the area. A capped or disconnected candidate set producing zero
+matches is a coverage/reconstruction limitation. Import a permitted community GPX
+and search the saved catalog when the public mapped-route source cannot satisfy
+the requested distance and loop criteria.
 
 The normalized source URL links to the OSM relation page. Results retain route
 relation identity and an attribution string. Deduplication merges matching names

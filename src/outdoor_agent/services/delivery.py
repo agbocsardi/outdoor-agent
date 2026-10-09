@@ -20,7 +20,7 @@ from outdoor_agent.providers.base import (
 from outdoor_agent.providers.coros import ManualCorosProvider
 from outdoor_agent.providers.gpx_export import CachedGeometryExporter
 from outdoor_agent.providers.http import HTTPClient
-from outdoor_agent.providers.osm import OSMProvider
+from outdoor_agent.providers.osm import OSM_GEOMETRY_NORMALIZER_VERSION, OSMProvider
 from outdoor_agent.providers.registry import registry
 from outdoor_agent.providers.ridewithgps import RideWithGPS
 from outdoor_agent.storage.db import RouteStore
@@ -37,6 +37,20 @@ EXPORT_PROVIDER_FACTORIES: dict[str, ExportProviderFactory] = {
     "local": lambda settings, http, route: CachedGeometryExporter(route),
 }
 EXPORT_ORIGINAL_BYTES = {"osm": False, "ridewithgps": True, "local": False}
+
+
+def _require_current_osm_geometry(route: Route) -> None:
+    if (
+        route.provider == "osm"
+        and route.raw_metadata.get("geometry_normalizer") != OSM_GEOMETRY_NORMALIZER_VERSION
+    ):
+        raise OutdoorError(
+            "OSM_GEOMETRY_REFRESH_REQUIRED",
+            "This saved OSM route predates safe geometry normalization and cannot be exported or handed off. Run get --route-id <id> --refresh first.",
+            5,
+            provider="osm",
+            suggestions=["Refresh with get --refresh before exporting or preparing a handoff."],
+        )
 
 
 async def load_route(settings: Settings, route_id: str, *, refresh: bool = False) -> Route:
@@ -82,6 +96,7 @@ async def export_route(
 ) -> ExportResult:
     store = RouteStore(settings.data_dir)
     route = await load_route(settings, route_id)
+    _require_current_osm_geometry(route)
     content = store.artifact_bytes(route.id)
     original = store.artifact_original(route.id) if content is not None else False
     warnings: list[str] = list(route.warnings)
@@ -184,6 +199,7 @@ async def prepare_handoff(
     if dry_run and confirm:
         raise OutdoorError("INVALID_ARGUMENTS", "Choose --dry-run or --confirm, not both.")
     route = RouteStore(settings.data_dir).get_route(route_id)
+    _require_current_osm_geometry(route)
     adapter = factory()
     provider: DeliveryProvider = adapter
     await provider.prepare(route)

@@ -1,7 +1,7 @@
 """Versioned event, finding and evidence-aware closure report contracts."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field
 
@@ -79,6 +79,18 @@ class ClosureSourceFreshness(Model):
     publication_age_seconds: float | None = Field(default=None, ge=0)
 
 
+class ClosureCoverageSummary(Model):
+    """Bounded summary of evidence that cannot be emitted as route-specific findings."""
+
+    source: str = Field(max_length=256)
+    reason: Literal["unresolved_location", "route_geometry_unavailable", "route_finding_limit"]
+    count: int = Field(ge=1)
+    sample_event_ids: list[Annotated[str, Field(max_length=160)]] = Field(
+        default_factory=list, max_length=5
+    )
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class ClosureReport(Model):
     """Conservative route assessment plus the feed provenance needed to interpret it."""
 
@@ -97,6 +109,8 @@ class ClosureReport(Model):
     sources: list[str] = Field(default_factory=list)
     source_errors: list[ClosureSourceError] = Field(default_factory=list)
     source_freshness: list[ClosureSourceFreshness] = Field(default_factory=list)
+    coverage_summaries: list[ClosureCoverageSummary] = Field(default_factory=list, max_length=12)
+    finding_limit: int = Field(default=100, ge=1, le=100)
     source_ages_seconds: dict[str, float | None] = Field(default_factory=dict)
     fetched_at: datetime | None = None
     source_age_seconds: float | None = Field(default=None, ge=0)

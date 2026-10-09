@@ -125,8 +125,8 @@ def test_doctor_never_exposes_credentials(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_version() -> None:
-    assert runner.invoke(app, ["--version"]).stdout.strip() == "0.3.0"
-    assert invoke(["--json", "--version"])["data"]["version"] == "0.3.0"
+    assert runner.invoke(app, ["--version"]).stdout.strip() == "0.3.1"
+    assert invoke(["--json", "--version"])["data"]["version"] == "0.3.1"
 
 
 def test_logs_go_to_stderr() -> None:

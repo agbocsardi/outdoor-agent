@@ -25,6 +25,7 @@ OSM_ATTRIBUTION = (
     "© OpenStreetMap contributors (https://www.openstreetmap.org/copyright); "
     "data available under the Open Database License (ODbL)."
 )
+OSM_GEOMETRY_NORMALIZER_VERSION = "osm-v2"
 
 
 def overpass_query(
@@ -245,7 +246,9 @@ def relation_to_route(element: dict[str, Any], fetched_at: Any = None) -> Route:
             type="LineString" if len(lines) == 1 else "MultiLineString",
             coordinates=lines[0] if len(lines) == 1 else lines,
         )
-    distance = _lines_length(lines) if lines and quality != "incomplete" else None
+    # A measured sum for a disconnected or incomplete relation is only a lower
+    # bound. Leave route length unknown unless the relation was fully joined.
+    distance = _lines_length(lines) if lines and quality == "complete" else None
     start = lines[0][0] if lines else None
     end = lines[-1][-1] if lines else None
     loop = None
@@ -258,6 +261,7 @@ def relation_to_route(element: dict[str, Any], fetched_at: Any = None) -> Route:
         value = tags.get(key)
         if isinstance(value, (str, int, float, bool)):
             raw[key] = value
+    raw["geometry_normalizer"] = OSM_GEOMETRY_NORMALIZER_VERSION
     member_tags: list[dict[str, Any]] = []
     members = element.get("members", [])
     if isinstance(members, list):
@@ -344,9 +348,15 @@ def reconstruct_members(
             incomplete = True
             continue
         coords: list[tuple[float, float]] = []
+        invalid_coordinate = False
         for point in geometry:
-            if not isinstance(point, dict):
-                continue
+            if (
+                not isinstance(point, dict)
+                or isinstance(point.get("lon"), bool)
+                or isinstance(point.get("lat"), bool)
+            ):
+                invalid_coordinate = True
+                break
             try:
                 lon, lat = float(point["lon"]), float(point["lat"])
                 if (
@@ -356,8 +366,17 @@ def reconstruct_members(
                     and -90 <= lat <= 90
                 ):
                     coords.append((lon, lat))
+                else:
+                    invalid_coordinate = True
+                    break
             except (TypeError, ValueError, KeyError):
-                continue
+                invalid_coordinate = True
+                break
+        # Reject the whole member when any point is malformed. Dropping one
+        # interior point would falsely connect its valid neighbors.
+        if invalid_coordinate:
+            incomplete = True
+            continue
         if len(coords) < 2:
             incomplete = True
             continue

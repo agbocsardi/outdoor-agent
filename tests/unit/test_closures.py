@@ -403,3 +403,200 @@ async def test_report_retains_per_source_refresh_and_publication_provenance(
     assert freshness.from_cache is True
     assert freshness.refresh_age_seconds is not None
     assert freshness.publication_age_seconds is not None
+
+
+@pytest.mark.asyncio
+async def test_nationwide_unlocated_events_are_summarized_with_bounded_output(
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime
+
+    from outdoor_agent.providers.ndw import FeedFetchResult, FeedSnapshot
+
+    now = datetime.now(UTC)
+    events = [
+        ClosureEvent(
+            id=f"alertc-{index}",
+            provider="ndw",
+            source_url="https://feed.example/current",
+            description=f"Unresolved Alert-C restriction {index}",
+            location_reference=f"AlertC method 4; location={index}",
+            location_reference_type="AlertCMethod4Linear",
+            geometry=None,
+            geometry_quality="unresolved",
+            starts_at=datetime(2026, 10, 10, tzinfo=UTC),
+            ends_at=datetime(2026, 10, 12, tzinfo=UTC),
+            timing_quality="precise",
+            affected_modes=["bike"],
+            mode_evidence="explicit",
+            restriction_type="cyclewayClosure",
+            status="active",
+        )
+        for index in range(4_572)
+    ]
+    snapshot = FeedSnapshot(
+        events=events,
+        fetched_at=now,
+        source_timestamp=now,
+        stale=False,
+        from_cache=False,
+        source="https://feed.example/current",
+        warnings=[],
+    )
+    report = await assess_route(
+        _settings(tmp_path),
+        _route(),
+        "2026-10-11",
+        Activity.gravel,
+        feed_result=FeedFetchResult(snapshots=[snapshot], errors=[]),
+    )
+    assert report.status == "coverage_unknown"
+    assert report.unknown_coverage is True
+    assert report.findings == []
+    assert report.events == []
+    assert len(report.coverage_summaries) == 1
+    summary = report.coverage_summaries[0]
+    assert summary.reason == "unresolved_location"
+    assert summary.count == 4_572
+    assert len(summary.sample_event_ids) == 5
+    assert len(summary.digest) == 64
+    assert report.finding_limit == 100
+    assert len(report.model_dump_json()) < 20_000
+
+    from dataclasses import replace
+
+    timestamp_only = events[-1].model_copy(
+        update={"observed_at": now.replace(microsecond=0), "published_at": now}
+    )
+    timestamp_snapshot = replace(snapshot, events=[*events[:-1], timestamp_only])
+    timestamp_report = await assess_route(
+        _settings(tmp_path),
+        _route(),
+        "2026-10-11",
+        Activity.gravel,
+        feed_result=FeedFetchResult(snapshots=[timestamp_snapshot], errors=[]),
+    )
+    assert timestamp_report.coverage_summaries[0].digest == summary.digest
+
+    changed = events[-1].model_copy(update={"description": "Changed restriction description"})
+    changed_snapshot = replace(snapshot, events=[*events[:-1], changed])
+    changed_report = await assess_route(
+        _settings(tmp_path),
+        _route(),
+        "2026-10-11",
+        Activity.gravel,
+        feed_result=FeedFetchResult(snapshots=[changed_snapshot], errors=[]),
+    )
+    assert changed_report.coverage_summaries[0].digest != summary.digest
+
+
+@pytest.mark.asyncio
+async def test_summary_overflow_folds_sources_without_dropping_digest_evidence(
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime
+
+    from outdoor_agent.providers.ndw import FeedFetchResult, FeedSnapshot
+
+    now = datetime.now(UTC)
+    events = [
+        ClosureEvent(
+            id=f"very-long-event-id-{index}-" + ("x" * 240),
+            provider="ndw",
+            source_url=f"https://feed.example/source/{index}",
+            description=f"Unresolved event {index}",
+            geometry=None,
+            geometry_quality="unresolved",
+            starts_at=datetime(2026, 10, 10, tzinfo=UTC),
+            ends_at=datetime(2026, 10, 12, tzinfo=UTC),
+            timing_quality="precise",
+            affected_modes=["bike"],
+            mode_evidence="explicit",
+            restriction_type="cyclewayClosure",
+            status="active",
+        )
+        for index in range(25)
+    ]
+    snapshot = FeedSnapshot(
+        events=events,
+        fetched_at=now,
+        source_timestamp=now,
+        stale=False,
+        from_cache=False,
+        source="https://feed.example/current",
+        warnings=[],
+    )
+    report = await assess_route(
+        _settings(tmp_path),
+        _route(),
+        "2026-10-11",
+        Activity.gravel,
+        feed_result=FeedFetchResult(snapshots=[snapshot], errors=[]),
+    )
+    assert len(report.coverage_summaries) <= 12
+    assert sum(summary.count for summary in report.coverage_summaries) == len(events)
+    overflow = next(
+        summary for summary in report.coverage_summaries if summary.source == "other_sources"
+    )
+    assert overflow.reason == "unresolved_location"
+    assert overflow.count > 0
+    assert all(
+        len(sample_id) <= 160
+        for summary in report.coverage_summaries
+        for sample_id in summary.sample_event_ids
+    )
+
+
+@pytest.mark.asyncio
+async def test_route_specific_findings_are_capped_but_omissions_are_summarized(
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime
+
+    from outdoor_agent.providers.ndw import FeedFetchResult, FeedSnapshot
+
+    now = datetime.now(UTC)
+    event_geometry = Geometry(type="LineString", coordinates=[(5.1, 52.1), (5.1, 52.101)])
+    events = [
+        ClosureEvent(
+            id=f"bike-{index}",
+            provider="ndw",
+            source_url="https://feed.example/current",
+            description="Cycleway closure",
+            geometry=event_geometry,
+            geometry_quality="precise",
+            starts_at=datetime(2026, 10, 10, tzinfo=UTC),
+            ends_at=datetime(2026, 10, 12, tzinfo=UTC),
+            timing_quality="precise",
+            affected_modes=["bike"],
+            mode_evidence="explicit",
+            restriction_type="cyclewayClosure",
+            status="active",
+        )
+        for index in range(105)
+    ]
+    snapshot = FeedSnapshot(
+        events=events,
+        fetched_at=now,
+        source_timestamp=now,
+        stale=False,
+        from_cache=False,
+        source="https://feed.example/current",
+        warnings=[],
+    )
+    report = await assess_route(
+        _settings(tmp_path),
+        _route(),
+        "2026-10-11",
+        Activity.gravel,
+        feed_result=FeedFetchResult(snapshots=[snapshot], errors=[]),
+    )
+    assert report.status == "known_conflict"
+    assert len(report.findings) == report.finding_limit == 100
+    assert len(report.events) == 100
+    assert report.unknown_coverage is True
+    assert len(report.coverage_summaries) == 1
+    summary = report.coverage_summaries[0]
+    assert summary.reason == "route_finding_limit"
+    assert summary.count == 5
+    assert len(summary.sample_event_ids) == 5

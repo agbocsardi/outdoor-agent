@@ -1,4 +1,4 @@
-# Completed CLI demo — 2026-10-09
+# CLI verification evidence — 2026-10-09
 
 The 0.2.0 implementation was exercised through the public provider endpoints,
 with isolated state and cache directories. No credentials, paid Google calls,
@@ -91,3 +91,77 @@ batch before the shortlist limit. A separate bounded optional OSM restriction
 probe returned 599 normalized events with no source errors; the events retain
 unknown timing and incomplete trail coverage. See [spec acceptance](spec-acceptance.md)
 for external gates still requiring operator/provider access.
+
+
+## 0.3.1 gravel workflow review
+
+The server review reported a 7.8 MB closure response with 4,572 findings and an
+invalid middle coordinate silently removed from OSM geometry. Offline regressions
+now cover both defects, bounded overflow, unchanged-feed rechecks, and legacy
+cached geometry/export quarantine. A fresh live check of an explicitly synthetic
+1 km track returned **4,027 bytes**, zero individual findings/events and two
+coverage summaries containing all **4,572** unresolved records. Its status remained
+`coverage_unknown`; unknown locations were not treated as clear coverage.
+
+The 0.2.0/0.3.0 probes above are historical evidence. Previously saved OSM records
+must now be refreshed before geometry use/export; disconnected relation geometry
+no longer supplies a whole-route distance or a confirmed loop.
+
+A real community-source route was downloaded through the ordinary public link
+published by [TWC De Kachelders](https://www.twcdekachelders.nl/clubtochten-gpx-mtb).
+The club describes it as “Rondje Heeswijk – Uurtje uitwaaien”: 26 km, comprising
+singletrack, paths and paved sections. The GPX is a planned gravel loop, not proof
+that someone completed it. Its [linked Komoot page](https://www.komoot.com/tour/290619717)
+currently flags cycling prohibited on several segments. These restrictions were
+retained as a source warning; the track was not rerouted.
+
+The permitted public GPX link is:
+<https://www.twcdekachelders.nl/gpx/Gravel-Heeswijk-uurtje_uitwaaien_26KM.gpx>.
+The downloaded file was 156,857 bytes, SHA-256
+`bd95be79e8f4b171aa07fb8edab5b89d873bcb1bdf98c87f16279350b113035e`.
+It contained one 1,023-point segment; computed length was **26.21 km**, with a
+confirmed geometric loop and start approximately **12.3 km from Den Bosch**.
+The original GPX and full route output are private scratch artifacts, not repository
+fixtures or redistributed route data.
+
+With that entitled GPX downloaded as `./club-route.gpx`, the reproducible workflow is:
+
+```bash
+uv run outdoor-agent import-gpx ./club-route.gpx --activity gravel \
+  --source-type community --attribution "TWC De Kachelders" \
+  --source-url https://www.twcdekachelders.nl/gpx/Gravel-Heeswijk-uurtje_uitwaaien_26KM.gpx \
+  --source-warning "Planned club gravel route. Linked Komoot page flags cycling access restrictions; verify with the club/land manager before riding. GPX not rerouted." \
+  --json
+
+uv run outdoor-agent search --provider local --source-type community \
+  --near "Den Bosch, Netherlands" --radius-km 20 --activity gravel \
+  --distance-km 20:35 --loop required --date 2026-10-11 --limit 5 --json
+
+# Use the local route ID returned by import/search.
+uv run outdoor-agent check-closures --route-id local:YOUR_ROUTE_ID \
+  --date 2026-10-11 --activity gravel --osm-restrictions --json
+uv run outdoor-agent deliver --route-id local:YOUR_ROUTE_ID \
+  --output ./club-handoff.gpx --dry-run --json
+# After reviewing the local preparation and source warnings:
+uv run outdoor-agent deliver --route-id local:YOUR_ROUTE_ID \
+  --output ./club-handoff.gpx --confirm --json
+```
+
+The named-origin, dated saved-catalog search returned this route with source URL,
+attribution and access warning. The combined live NDW/OSM check returned
+`possible_conflict`, 17 route findings, two unresolved-coverage summaries and no
+source errors; coverage remained unknown. All inspected outputs validated against
+response and command JSON schemas. The handoff dry-run wrote nothing and showed
+the access warning before confirmation. Confirmed local preparation retained the
+original bytes exactly and reported `watch_sync_unverified`.
+
+A fresh public OSM search with the same Den Bosch distance/loop constraints
+returned retryable `PROVIDERS_UNAVAILABLE` (exit 4). It provides no new evidence
+of catalog completeness. Offline coverage-counter tests demonstrate why 200
+incomplete candidates yielding zero matches cannot prove no suitable loop exists.
+
+This demonstrates an attributed existing route through saved discovery, live
+assessment and lossless COROS-compatible local preparation. It does **not**
+establish a ride-ready recommendation: source access restrictions need verification,
+public community-catalog search remains unavailable, and no physical watch import
+was tested. Paid/authenticated providers and target OpenClaw loading remain untested.

@@ -78,6 +78,7 @@ async def test_mapped_geometry_export_preserves_segments_and_origin(tmp_path: Pa
             type="MultiLineString", coordinates=[[(5, 52), (5.001, 52)], [(6, 53), (6.001, 53)]]
         ),
         gpx_access="available",
+        raw_metadata={"geometry_normalizer": "osm-v2"},
     )
     RouteStore(settings.data_dir).save_route(route)
     output = tmp_path / "mapped.gpx"
@@ -174,6 +175,7 @@ async def test_refresh_dispatch_updates_metadata_and_invalidates_cached_gpx(
         name="Stale metadata",
         geometry=Geometry(type="LineString", coordinates=[(5, 52), (5.001, 52)]),
         gpx_access="available",
+        raw_metadata={"geometry_normalizer": "osm-v2"},
     )
     store = RouteStore(settings.data_dir)
     store.save_route(route, example_gpx.read_bytes())
@@ -197,6 +199,87 @@ async def test_refresh_dispatch_updates_metadata_and_invalidates_cached_gpx(
     loaded = await load_route(settings, route.id, refresh=True)
     assert loaded.name == "Fresh metadata"
     assert store.artifact_bytes(route.id) is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_osm_cache_is_quarantined_until_safe_refresh(
+    tmp_path: Path, example_gpx: Path, monkeypatch
+) -> None:
+    from outdoor_agent.providers.registry import registry
+    from outdoor_agent.services import delivery
+
+    settings = config(tmp_path)
+    store = RouteStore(settings.data_dir)
+    legacy = Route(
+        id="osm:relation:42",
+        provider="osm",
+        provider_route_id="42",
+        source_url="https://www.openstreetmap.org/relation/42",
+        source_type=SourceType.official_trail,
+        attribution="© OpenStreetMap contributors",
+        name="Legacy OSM route",
+        geometry=Geometry(
+            type="LineString", coordinates=[(5.0, 52.0), (5.001, 52.0), (5.003, 52.0)]
+        ),
+        distance_m=300,
+        is_loop=True,
+    )
+    store.save_route(legacy, example_gpx.read_bytes())
+
+    quarantined = store.get_route(legacy.id)
+    assert quarantined.id == legacy.id
+    assert quarantined.source_url == legacy.source_url
+    assert quarantined.attribution == legacy.attribution
+    assert quarantined.geometry is None
+    assert quarantined.distance_m is None
+    assert quarantined.is_loop is None
+    assert quarantined.gpx_access == "unverified"
+    assert quarantined.start_lat is None and quarantined.start_lon is None
+    assert any("quarantined" in warning for warning in quarantined.warnings)
+    assert store.list_routes()[0].geometry is None
+    with pytest.raises(OutdoorError) as artifact_error:
+        store.artifact_bytes(legacy.id)
+    assert artifact_error.value.code == "OSM_GEOMETRY_REFRESH_REQUIRED"
+
+    with pytest.raises(OutdoorError) as export_error:
+        await export_route(settings, legacy.id, tmp_path / "legacy.gpx")
+    assert export_error.value.code == "OSM_GEOMETRY_REFRESH_REQUIRED"
+    with pytest.raises(OutdoorError) as handoff_error:
+        await prepare_handoff(settings, legacy.id, confirm=True)
+    assert handoff_error.value.code == "OSM_GEOMETRY_REFRESH_REQUIRED"
+    assert not (tmp_path / "legacy.gpx").exists()
+
+    refreshed = legacy.model_copy(
+        update={
+            "name": "Refreshed OSM route",
+            "raw_metadata": {"geometry_normalizer": "osm-v2"},
+            "geometry": Geometry(type="LineString", coordinates=[(5, 52), (5.002, 52)]),
+            "distance_m": 137.2,
+        }
+    )
+
+    class FakeDetail:
+        declaration = next(item for item in registry() if item.provider == "osm")
+
+        async def get(self, route_id: str) -> Route:
+            assert route_id == legacy.id
+            return refreshed
+
+    monkeypatch.setitem(delivery.DETAIL_PROVIDER_FACTORIES, "osm", lambda s, h: FakeDetail())
+    original_http = delivery.HTTPClient
+
+    class MockClient(original_http):
+        def __init__(self, config: Settings) -> None:
+            super().__init__(config, transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+
+    monkeypatch.setattr(delivery, "HTTPClient", MockClient)
+    loaded = await load_route(settings, legacy.id, refresh=True)
+    assert loaded.raw_metadata["geometry_normalizer"] == "osm-v2"
+    assert loaded.geometry is not None
+    assert loaded.name == "Refreshed OSM route"
+    assert store.artifact_bytes(legacy.id) is None
+    result = await export_route(settings, legacy.id, tmp_path / "refreshed.gpx")
+    assert result.route_id == legacy.id
 
 
 def test_schema_one_migration_retains_original_import(tmp_path: Path, example_gpx: Path) -> None:
@@ -271,6 +354,7 @@ async def test_refreshed_geometry_invalidates_old_export_and_handoff(tmp_path: P
         attribution="Synthetic OSM attribution",
         name="Synthetic route",
         geometry=Geometry(type="LineString", coordinates=[(5, 52), (5.001, 52)]),
+        raw_metadata={"geometry_normalizer": "osm-v2"},
     )
     store.save_route(route)
     first = await prepare_handoff(settings, route.id, confirm=True)

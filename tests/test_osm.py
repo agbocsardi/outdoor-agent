@@ -8,6 +8,7 @@ import pytest
 
 from outdoor_agent.config import load_settings
 from outdoor_agent.errors import OutdoorError
+from outdoor_agent.geo.export import route_gpx
 from outdoor_agent.models.routes import Activity
 from outdoor_agent.providers.base import RouteDetailProvider, RouteExportProvider
 from outdoor_agent.providers.http import HTTPClient
@@ -26,6 +27,7 @@ def test_reconstructs_member_order_roles_and_gaps() -> None:
     assert complete.is_loop is True
     assert complete.source_type == "official_trail"
     assert complete.elevation_gain_m is None
+    assert complete.raw_metadata["geometry_normalizer"] == "osm-v2"
 
     broken = relation_to_route(elements[1])
     assert broken.geometry_quality == "incomplete"
@@ -58,6 +60,60 @@ def test_reconstructs_unmarked_reversed_way_without_bridging() -> None:
     )
     assert nested == []
     assert nested_quality == "incomplete"
+
+
+@pytest.mark.parametrize(
+    "invalid_point",
+    [
+        {"lon": 5.001},
+        {"lon": 181, "lat": 52},
+        {"lon": 5.001, "lat": float("nan")},
+        {"lon": 5.001, "lat": "bad"},
+        {"lon": True, "lat": 52},
+        None,
+    ],
+)
+def test_invalid_middle_member_coordinate_is_never_dropped_and_bridged(
+    invalid_point: object,
+) -> None:
+    element = {
+        "type": "relation",
+        "id": 444,
+        "tags": {"route": "hiking"},
+        "members": [
+            {
+                "type": "way",
+                "role": "",
+                "geometry": [{"lon": 5.0, "lat": 52.0}, {"lon": 5.001, "lat": 52.0}],
+            },
+            {
+                "type": "way",
+                "role": "",
+                "geometry": [
+                    {"lon": 5.001, "lat": 52.0},
+                    invalid_point,
+                    {"lon": 5.003, "lat": 52.0},
+                ],
+            },
+            {
+                "type": "way",
+                "role": "",
+                "geometry": [{"lon": 5.003, "lat": 52.0}, {"lon": 5.004, "lat": 52.0}],
+            },
+        ],
+    }
+    route = relation_to_route(element)
+    assert route.geometry_quality == "incomplete"
+    assert route.geometry is not None and route.geometry.type == "MultiLineString"
+    assert route.geometry.coordinates == [
+        [(5.0, 52.0), (5.001, 52.0)],
+        [(5.003, 52.0), (5.004, 52.0)],
+    ]
+    assert route.distance_m is None
+    assert route.is_loop is None
+    content = route_gpx(route).decode()
+    assert content.count("<trkseg>") == 2
+    assert content.count("<trkpt ") == 4
 
 
 def test_relation_records_only_conservative_member_grade_separation_clues() -> None:

@@ -22,7 +22,7 @@ from outdoor_agent.providers.local import PROVENANCE_WARNING, LocalCatalogProvid
 from outdoor_agent.providers.ndw import FeedFetchResult, fetch_feeds, parse_fixture
 from outdoor_agent.providers.osm import OSMDiscoveryAdapter, OSMProvider
 from outdoor_agent.providers.registry import registry
-from outdoor_agent.services.ranking import SourceProvenance, rank_routes
+from outdoor_agent.services.ranking import SourceProvenance, deduplicate_routes, rank_routes
 from outdoor_agent.services.validation import assess_route
 
 SearchSourceType = Literal["community", "official_trail", "all"]
@@ -126,10 +126,28 @@ class DiscoveryProviderStatus(Model):
     stale: bool = False
 
 
+class DiscoveryCoverage(Model):
+    """Machine-readable counts describing provider coverage and local filtering."""
+
+    provider_candidates: int = Field(default=0, ge=0)
+    source_type_excluded: int = Field(default=0, ge=0)
+    unique_candidates: int = Field(default=0, ge=0)
+    missing_start: int = Field(default=0, ge=0)
+    outside_radius: int = Field(default=0, ge=0)
+    unknown_distance_with_distance_filter: int = Field(default=0, ge=0)
+    outside_distance_range: int = Field(default=0, ge=0)
+    shape_excluded: int = Field(default=0, ge=0)
+    geometry_not_complete: int = Field(default=0, ge=0)
+    eligible: int = Field(default=0, ge=0)
+    returned: int = Field(default=0, ge=0)
+    provider_truncated: bool = False
+
+
 class DiscoveryResult(Model):
     routes: list[RankedRoute]
     total: int = Field(default=0, ge=0)
     provider_status: list[DiscoveryProviderStatus]
+    coverage: DiscoveryCoverage = Field(default_factory=DiscoveryCoverage)
     warnings: list[str] = Field(default_factory=list)
     partial: bool = False
 
@@ -266,6 +284,9 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
     routes: list[Route] = []
     provider_errors: list[OutdoorError] = []
     query_succeeded = False
+    provider_candidates = 0
+    source_type_excluded = 0
+    provider_truncated = False
     for provider_name in criteria.providers:
         if criteria.source_type == "community" and provider_name != "local":
             continue
@@ -313,16 +334,23 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
                     ProviderSearchCriteria(bbox=bounds, activity=criteria.activity, limit=200)
                 )
             query_succeeded = True
+            provider_candidates += len(provider_result.routes)
             provider_routes = [
                 route
                 for route in provider_result.routes
                 if (criteria.source_type == "all" and route.source_type != SourceType.generated)
                 or route.source_type.value == criteria.source_type
             ]
+            source_type_excluded += len(provider_result.routes) - len(provider_routes)
             routes.extend(provider_routes)
             stale = provider_result.stale
             cached = provider_result.cached
             partial_response = bool(provider_result.warnings)
+            provider_truncated = provider_truncated or any(
+                "at least" in message.casefold()
+                or "additional matches may be omitted" in message.casefold()
+                for message in provider_result.warnings
+            )
             reasons = []
             if stale:
                 reasons.append("stale cache")
@@ -457,7 +485,7 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
     ranking_weights = dict(settings.ranking_weights)
     if criteria.date:
         ranking_weights.setdefault("closures", 1.0)
-    ranked = rank_routes(
+    all_ranked = rank_routes(
         routes,
         activity=criteria.activity,
         center=center,
@@ -468,7 +496,55 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
         weights=ranking_weights,
         closure_reports=closure_reports,
         shape=criteria.shape,
-    )[: criteria.limit]
+    )
+    ranked = all_ranked[: criteria.limit]
+    unique_candidates = deduplicate_routes(routes)
+    diagnostic_routes = [group[0] for group in unique_candidates]
+    geod = Geod(ellps="WGS84")
+    missing_start = sum(
+        route.start_lat is None or route.start_lon is None for route in diagnostic_routes
+    )
+    outside_radius = sum(
+        route.start_lat is not None
+        and route.start_lon is not None
+        and abs(float(geod.inv(center[0], center[1], route.start_lon, route.start_lat)[2]))
+        > criteria.radius_km * 1000
+        for route in diagnostic_routes
+    )
+    has_distance_filter = criteria.distance_min_m is not None or criteria.distance_max_m is not None
+    unknown_distance = sum(
+        has_distance_filter and route.distance_m is None for route in diagnostic_routes
+    )
+    outside_distance = sum(
+        route.distance_m is not None
+        and (
+            (criteria.distance_min_m is not None and route.distance_m < criteria.distance_min_m)
+            or (criteria.distance_max_m is not None and route.distance_m > criteria.distance_max_m)
+        )
+        for route in diagnostic_routes
+    )
+    requires_loop = criteria.shape == "loop" or criteria.loop == "required"
+    shape_excluded = sum(
+        (requires_loop and route.is_loop is not True)
+        or (criteria.shape == "point_to_point" and route.is_loop is not False)
+        for route in diagnostic_routes
+    )
+    geometry_not_complete = sum(
+        route.geometry is None or route.geometry_quality in {"disconnected", "incomplete"}
+        for route in routes
+    )
+    if provider_truncated:
+        warnings.append(
+            "A provider hit its relation limit; the candidate set is truncated, so an empty result does not show that no matching route exists. Narrow the search area or inspect provider coverage."
+        )
+    if geometry_not_complete:
+        warnings.append(
+            f"{geometry_not_complete} candidate route(s) have missing, disconnected, or incomplete geometry; length and shape filters may exclude them."
+        )
+    if not ranked and (provider_truncated or geometry_not_complete):
+        warnings.append(
+            "No route passed the requested filters in the available mapped candidates. This search cannot establish that no suitable route exists; try a smaller area or import an entitled community GPX and search --provider local."
+        )
     return DiscoveryResult(
         routes=[
             RankedRoute(
@@ -504,6 +580,20 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
             for item in ranked
         ],
         provider_status=statuses,
+        coverage=DiscoveryCoverage(
+            provider_candidates=provider_candidates,
+            source_type_excluded=source_type_excluded,
+            unique_candidates=len(diagnostic_routes),
+            missing_start=missing_start,
+            outside_radius=outside_radius,
+            unknown_distance_with_distance_filter=unknown_distance,
+            outside_distance_range=outside_distance,
+            shape_excluded=shape_excluded,
+            geometry_not_complete=geometry_not_complete,
+            eligible=len(all_ranked),
+            returned=min(len(ranked), criteria.limit),
+            provider_truncated=provider_truncated,
+        ),
         warnings=warnings,
         partial=bool(warnings) or any(status.status != "ok" for status in statuses),
     )

@@ -51,6 +51,20 @@ feed's reliable planning horizon is not documented, so the report labels dates a
 within, beyond, historical to, or unknown against the observed publication/event span;
 it does not invent a fixed forecast horizon.
 
+Unlocatable nationwide records are coverage evidence, not route-specific findings.
+`coverage_summaries` groups them by source and reason with a count, at most five
+sample IDs, and a SHA-256 digest covering every summarized event. At most twelve
+summary rows are emitted; excess source groups fold into `other_sources` with
+their full counts and evidence digests. Missing route geometry is summarized
+separately. `unknown_coverage` remains true.
+
+At most 100 route-specific findings and their corresponding events are emitted,
+with known conflicts ahead of possible and unknown findings. Overflow appears
+under `route_finding_limit`. The aggregate status considers all events before
+truncation, so a known conflict cannot disappear from the assessment. Comparison
+hashes include summary digests: changes to an unsampled event remain detectable.
+Observation/publication-only refreshes do not change these digests.
+
 ## Evidence boundary
 
 The Phase 0 read-only probe recorded in [provider-feasibility.md](provider-feasibility.md)

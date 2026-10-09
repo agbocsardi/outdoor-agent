@@ -1,6 +1,6 @@
 # outdoor-agent
 
-`outdoor-agent` 0.3.0 is a local, JSON-first command-line tool for inspecting and saving GPX routes, searching saved community routes and mapped OpenStreetMap trails, assessing NDW and optional OSM closure evidence, enriching routes with opt-in Google Places data, and preparing a local GPX handoff for the COROS app. Python environments and commands use **uv**.
+`outdoor-agent` 0.3.1 is a local, JSON-first command-line tool for inspecting and saving GPX routes, searching saved community routes and mapped OpenStreetMap trails, assessing NDW and optional OSM closure evidence, enriching routes with opt-in Google Places data, and preparing a local GPX handoff for the COROS app. Python environments and commands use **uv**.
 
 ## Install
 
@@ -40,6 +40,11 @@ uv run outdoor-agent search \
 
 Use `--bbox SOUTH,WEST,NORTH,EAST` for an explicit bounded query extent; `--near` then becomes optional. Without an origin, the bbox midpoint is the origin. `--radius-km` still filters route starts relative to that origin. `--shape point_to_point` requires a known non-loop; `--shape loop` requires a known loop. With `--date`, candidates receive closure assessments before ranking and limiting; unknown coverage is explicitly excluded from the closure score.
 
+Search returns `coverage` counters for provider candidates, missing geometry and
+measurements, filter exclusions, eligible routes and truncation. Zero matches in
+an incomplete or capped OSM response do not establish that no suitable route
+exists. Consider an entitled, source-attributed GPX in your saved catalog.
+
 Searches save normalized route metadata locally. List and retrieve saved routes without another provider request:
 
 ```bash
@@ -47,6 +52,11 @@ uv run outdoor-agent routes --limit 100 --json
 uv run outdoor-agent get --route-id osm:relation:93841 --json
 uv run outdoor-agent get --route-id osm:relation:93841 --refresh --json
 ```
+
+After upgrading to 0.3.1, previously saved OSM geometry is quarantined until
+`get --refresh` reprocesses it with the safe normalizer. Legacy OSM exports and
+handoffs are blocked with `OSM_GEOMETRY_REFRESH_REQUIRED`. Original local GPX
+imports remain available.
 
 To retrieve Ride with GPS metadata, configure `RIDEWITHGPS_API_KEY` and `RIDEWITHGPS_AUTH_TOKEN` through secure environment injection or private TOML. These credentials are sent in provider headers. The adapter supports authenticated route metadata and GPX export only when the provider permits the requested route. It does not provide public community search, route pinning, or account writes. `doctor --probe` performs an explicit read-only authentication request; ordinary `doctor` does not contact providers. Credential presence is not proof that the credentials work.
 
@@ -65,6 +75,11 @@ uv run outdoor-agent import-gpx ./ride.gpx \
 ```
 
 Use the original URL and attribution when known. Import does not fetch or validate the remote page or establish export rights. URL validation only accepts supported HTTPS source hosts and rejects credentials, query strings, fragments, private endpoints and nonstandard ports. Unknown provenance remains `unknown`; ratings and popularity are never invented.
+
+Repeat `--source-warning "Source/access caveat"` to retain up to 20 warnings of
+500 characters each. They accompany saved search results and handoff plans.
+See the [real club-route demonstration](docs/cli-demo.md#031-gravel-workflow-review)
+for a permitted public GPX source and its unresolved cycling-access restrictions.
 
 Search your imported catalog without contacting a route-sharing account:
 
@@ -109,6 +124,12 @@ Dates are interpreted as the local calendar day in `default_timezone` (default `
 Add `--osm-restrictions` to `check-closures` or `recheck` to query bounded OSM access/construction tags near the selected route. These tags have unknown temporal validity and conditional rules remain uncertain; they supplement road feeds and never prove full trail coverage. Reports expose each source's last successful refresh, publication age, cache state, ETag and Last-Modified.
 
 Possible statuses include `known_conflict`, `possible_conflict`, `no_known_conflict`, `coverage_unknown`, and `check_failed`. A feed outage or unresolved location cannot be treated as safe, and `no_known_conflict` does not guarantee a route is open. Partial results are returned with warnings; add `--strict` to exit 6 after emitting them. Each check stores a stable comparison against the previous finding set. SQLite schema version 2 migrates older state transactionally; back up the SQLite database together with its GPX artifacts.
+
+Nationwide records without route-locatable geometry appear in bounded
+`coverage_summaries`, with counts, up to five sample IDs and a digest of all
+summarized evidence. They keep coverage unknown rather than becoming individual
+route findings. Reports retain at most 100 route findings, prioritizing known
+conflicts; overflow is summarized without weakening the aggregate assessment.
 
 ## Optional Google Places enrichment
 

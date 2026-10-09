@@ -142,7 +142,12 @@ def test_search_saves_real_adapter_results_and_emits_partial(
     imported: str, example_gpx: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     route = inspect_gpx(example_gpx.read_bytes()).route.model_copy(
-        update={"id": "osm:relation:42", "provider": "osm", "provider_route_id": "42"}
+        update={
+            "id": "osm:relation:42",
+            "provider": "osm",
+            "provider_route_id": "42",
+            "raw_metadata": {"geometry_normalizer": "osm-v2"},
+        }
     )
 
     async def mocked(config, criteria):
@@ -355,3 +360,103 @@ def test_synthetic_saved_community_catalog_discovery_to_approved_handoff(
     prepared = call(["deliver", "--route-id", route_id, "--output", str(path), "--confirm"])
     assert prepared["data"]["watch_status"] == "watch_sync_unverified"
     assert path.read_bytes() == example_gpx.read_bytes()
+
+
+def test_import_retains_bounded_source_access_caveats_through_handoff(
+    tmp_path: Path, example_gpx: Path
+) -> None:
+    note = "Source page flags bicycle access restrictions; verify before riding."
+    imported = call(
+        [
+            "import-gpx",
+            str(example_gpx),
+            "--source-warning",
+            note,
+            "--source-url",
+            "https://www.twcdekachelders.nl/clubtochten-gpx-mtb",
+        ]
+    )["data"]
+    route_id = imported["inspection"]["route"]["id"]
+    assert note in imported["inspection"]["route"]["warnings"]
+    assert note in call(["get", "--route-id", route_id])["data"]["route"]["warnings"]
+    path = tmp_path / "source-caveat-handoff.gpx"
+    plan = call(["deliver", "--route-id", route_id, "--output", str(path)])
+    assert note in plan["data"]["warnings"]
+    prepared = call(["deliver", "--route-id", route_id, "--output", str(path), "--confirm"])
+    assert note in prepared["data"]["warnings"]
+    assert path.read_bytes() == example_gpx.read_bytes()
+    rejected = call(["import-gpx", str(example_gpx), "--source-warning", "x" * 501], code=2)
+    assert rejected["error"]["code"] == "INVALID_ARGUMENTS"
+
+
+def test_recheck_detects_unsampled_coverage_changes_but_not_refresh_timestamps(
+    imported: str, monkeypatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from outdoor_agent.models.closures import ClosureEvent
+    from outdoor_agent.providers.ndw import FeedFetchResult, FeedSnapshot
+    from outdoor_agent.services.validation import assess_route as real_assess
+
+    stamp = datetime(2026, 10, 9, tzinfo=UTC)
+    events = [
+        ClosureEvent(
+            id=f"unresolved-{index:02d}",
+            provider="ndw",
+            description="Synthetic unresolved record",
+            restriction_type="closure",
+            status="active",
+            observed_at=stamp,
+            published_at=stamp,
+            starts_at=stamp,
+            ends_at=stamp + timedelta(days=30),
+        )
+        for index in range(10)
+    ]
+
+    async def fixture_assess(config, route, date, activity, **kwargs):
+        return await real_assess(
+            config,
+            route,
+            date,
+            activity,
+            feed_result=FeedFetchResult(
+                snapshots=[
+                    FeedSnapshot(
+                        events=events,
+                        fetched_at=stamp,
+                        source_timestamp=stamp,
+                        stale=False,
+                        from_cache=False,
+                        source="fixture://synthetic-unresolved",
+                        warnings=["Synthetic test feed."],
+                    )
+                ],
+                errors=[],
+            ),
+        )
+
+    monkeypatch.setattr(cli, "assess_route", fixture_assess)
+    args = ["check-closures", "--route-id", imported, "--date", "2026-10-11"]
+    first = call(args)
+    summary = first["data"]["assessment"]["coverage_summaries"][0]
+    assert summary["count"] == 10
+    assert "unresolved-09" not in summary["sample_event_ids"]
+    events[:] = [
+        event.model_copy(
+            update={
+                "observed_at": stamp + timedelta(minutes=1),
+                "published_at": stamp + timedelta(minutes=1),
+            }
+        )
+        for event in events
+    ]
+    refreshed = call(args)
+    assert refreshed["data"]["comparison"]["changed"] is False
+    events[-1] = events[-1].model_copy(
+        update={"description": "Substantive change to an unsampled record"}
+    )
+    changed = call(args)
+    assert changed["data"]["comparison"]["changed"] is True
+    assert changed["data"]["assessment"]["findings"] == []
+    assert changed["data"]["assessment"]["unknown_coverage"] is True

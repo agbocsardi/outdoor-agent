@@ -24,7 +24,17 @@ Audit date: 2026-10-09. This matrix separates requirements implementable and tes
 
 The internal acceptance gates are the CLI/data contracts, explicit capability states, bounded discovery, source-aware ranking, privacy, closure uncertainty, and a dry-run-first manual GPX handoff. The external gates are route-provider permissions, any partner agreements/credentials, and loading the skill on the actual OpenClaw host. Google Places, a COROS partner push, a RouteYou agreement, saved-route polling, and MCP are optional integrations.
 
-The software may pass the specification's honest fallback behavior by clearly reporting that public community discovery is unavailable, offering mapped OSM trails as `official_trail`, and supporting user-provided GPX plus documented manual COROS import. That does **not** meet the product's full success definition in `spec.md` §15: a real community route must travel from discovery through closure assessment to a COROS-compatible handoff. Local catalog discovery supports the manual fallback over entitled community GPX files supplied by the operator. Full public-discovery success and a real community-route acceptance demo still require permitted source access and a genuinely attributed route; synthetic fixture tests establish code behavior only. OSM official trails and an unprobed RWGPS account do not establish those external capabilities.
+The software supports honest fallback behavior by explaining unavailable public
+community discovery, labeling OSM trails `official_trail`, and supporting entitled
+GPX plus manual COROS import. This does **not** establish a ride-ready gravel
+recommendation or full public community-catalog discovery. The 0.3.1 demonstration
+in [CLI evidence](cli-demo.md#031-gravel-workflow-review) took a real club-published
+26.2 km loop near Den Bosch through saved discovery, live closure assessment and
+lossless local COROS-compatible preparation. Its source flags cycling restrictions,
+and the live check returned possible conflicts with unknown coverage. It establishes
+that software path with honest warnings, not route access permission or watch arrival.
+Public-discovery success still requires permitted catalog access. OSM official
+trails and an unprobed RWGPS account do not establish those external capabilities.
 
 ## Official external evidence
 
@@ -37,3 +47,16 @@ The software may pass the specification's honest fallback behavior by clearly re
 ## Repository verification — 0.3.0
 
 The final offline run passed 270 tests with one explicitly opted-in live test skipped, 90% full-package coverage, and clean Ruff lint/format, strict mypy and lock checks. `uv sync --dev` and `uv build` succeeded. The installed wheel ran `doctor --json` from outside the checkout. The explicit synthetic community catalog contract covers import → bbox/shape/date-aware discovery → uncertainty disclosure → dry-run → confirmed lossless manual GPX handoff; it is labeled synthetic and does not prove public community access.
+
+
+## Review corrections — 0.3.1
+
+Unlocatable national records now use bounded coverage summaries instead of individual
+route findings. Reports retain at most 100 prioritized route findings; counts and
+stable digests preserve overflow evidence and recheck change detection. Invalid
+OSM member coordinates reject the whole member; length/loop claims require complete
+geometry. Earlier cached OSM geometry and exports require explicit safe refresh.
+Search exposes coverage/filter counters, and imported source-access caveats survive
+search and dry-run handoff. The offline suite passed 283 tests (one opt-in live test
+skipped), with 90% coverage. The real-source demonstration above is additional
+evidence for the saved-route fallback, with unresolved access and coverage limits.

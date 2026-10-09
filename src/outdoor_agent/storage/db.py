@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from outdoor_agent.errors import OutdoorError
 from outdoor_agent.models.routes import GPXArtifact, GPXInspection, ImportResult, Route, now
+from outdoor_agent.providers.osm import OSM_GEOMETRY_NORMALIZER_VERSION
 from outdoor_agent.storage.migrations import migrate
 
 
@@ -186,7 +187,7 @@ class RouteStore:
                     else None
                 )
                 if row:
-                    return Route.model_validate_json(row[0])
+                    return self._quarantine_legacy_osm(Route.model_validate_json(row[0]))
             except ValidationError as exc:
                 raise OutdoorError(
                     "CACHE_CORRUPT", "Stored route metadata is malformed.", 7
@@ -213,7 +214,7 @@ class RouteStore:
                         "SELECT route_json FROM route_cache ORDER BY stored_at DESC LIMIT ?",
                         (limit,),
                     ):
-                        route = Route.model_validate_json(row[0])
+                        route = self._quarantine_legacy_osm(Route.model_validate_json(row[0]))
                         if route.id not in ids:
                             routes.append(route)
                             ids.add(route.id)
@@ -222,6 +223,36 @@ class RouteStore:
                     "CACHE_CORRUPT", "Stored route metadata is malformed.", 7
                 ) from exc
         return routes[:limit]
+
+    @staticmethod
+    def _quarantine_legacy_osm(route: Route) -> Route:
+        """Hide pre-osm-v2 cached geometry until the provider safely refreshes it."""
+        if (
+            route.provider != "osm"
+            or route.raw_metadata.get("geometry_normalizer") == OSM_GEOMETRY_NORMALIZER_VERSION
+        ):
+            return route
+        warning = (
+            "Legacy OSM geometry was quarantined because it predates safe normalization; "
+            "refresh the route before using or exporting its geometry."
+        )
+        warnings = list(route.warnings)
+        if warning not in warnings:
+            warnings.append(warning)
+        return route.model_copy(
+            update={
+                "geometry": None,
+                "start_lat": None,
+                "start_lon": None,
+                "end_lat": None,
+                "end_lon": None,
+                "distance_m": None,
+                "is_loop": None,
+                "geometry_quality": "unknown",
+                "gpx_access": "unverified",
+                "warnings": warnings,
+            }
+        )
 
     def artifact_bytes(self, route_id: str) -> bytes | None:
         from outdoor_agent.geo.gpx import MAX_BYTES
@@ -236,11 +267,31 @@ class RouteStore:
                 ).fetchone()
                 row = (
                     db.execute(
-                        "SELECT artifact_path, sha256 FROM route_cache WHERE id=?", (route_id,)
+                        "SELECT artifact_path, sha256, route_json FROM route_cache WHERE id=?",
+                        (route_id,),
                     ).fetchone()
                     if exists
                     else None
                 )
+                if row:
+                    try:
+                        cached_route = Route.model_validate_json(row[2])
+                    except ValidationError as exc:
+                        raise OutdoorError(
+                            "CACHE_CORRUPT", "Stored route metadata is malformed.", 7
+                        ) from exc
+                    if (
+                        cached_route.provider == "osm"
+                        and cached_route.raw_metadata.get("geometry_normalizer")
+                        != OSM_GEOMETRY_NORMALIZER_VERSION
+                    ):
+                        raise OutdoorError(
+                            "OSM_GEOMETRY_REFRESH_REQUIRED",
+                            "Legacy cached OSM geometry and artifacts are quarantined. Run get --route-id <id> --refresh before export.",
+                            5,
+                            provider="osm",
+                            suggestions=["Refresh the route with get --refresh, then export it."],
+                        )
             if not row or row[0] is None:
                 return None
             try:

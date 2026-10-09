@@ -302,10 +302,22 @@ def import_gpx(
     source_url: str | None = typer.Option(None),
     source_type: SourceType = typer.Option(SourceType.unknown),
     attribution: str | None = typer.Option(None),
+    source_warning: list[str] = typer.Option(
+        [],
+        "--source-warning",
+        help="Retain a source/access caveat with the saved route; repeat up to 20 times.",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Store original GPX and inspection in private XDG state; repeated imports are idempotent."""
     config = settings(ctx)
+    if len(source_warning) > 20 or any(
+        not value.strip() or len(value) > 500 for value in source_warning
+    ):
+        raise OutdoorError(
+            "INVALID_ARGUMENTS",
+            "Source warnings must be nonempty, at most 500 characters each, with at most 20 values.",
+        )
     content = read_gpx(path)
     inspection = inspect_gpx(
         content,
@@ -314,6 +326,7 @@ def import_gpx(
         source_type=source_type,
         attribution=attribution,
     )
+    inspection.route.warnings.extend(value.strip() for value in source_warning)
     result = RouteStore(config.data_dir).import_route(inspection, content)
     warnings = list(result.inspection.route.warnings)
     if result.already_present:
@@ -580,6 +593,9 @@ def closure_result(
         "source_status": report.source_status,
         "unknown_coverage": report.unknown_coverage,
         "horizon_status": report.horizon_status,
+        "coverage_summaries": [
+            summary.model_dump(mode="json") for summary in report.coverage_summaries
+        ],
         "source_errors": sorted(
             [error.model_dump(mode="json") for error in report.source_errors],
             key=lambda item: (item["source"], item["code"]),

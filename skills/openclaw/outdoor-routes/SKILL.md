@@ -47,6 +47,9 @@ results as mapped official-trail records and state the community-catalog warning
 Respect result `status`, `provider_status`, warnings, score explanations, geometry
 quality, provenance, cache freshness and route attribution. A partial result is not
 a complete search. Null distance, elevation, popularity and rating mean unknown.
+Read the search `coverage` counters. Zero results from capped, disconnected or
+incomplete candidates do not prove that no suitable route exists. Offer saved
+community GPX search with retained provenance when the available source is limited.
 OSM route relations do not provide popularity/review evidence. Search saves
 normalized route records locally; use the returned route ID for follow-up commands.
 Use `get` to read or explicitly refresh one saved route, and `routes` to list saved
@@ -62,8 +65,9 @@ Inspect local GPX without storing it, or import it when the user wants it saved:
 ```bash
 uv run --project /srv/outdoor-agent outdoor-agent inspect "/safe/path/ride.gpx" --activity gravel --json
 uv run --project /srv/outdoor-agent outdoor-agent import-gpx "/safe/path/ride.gpx" \
-  --activity gravel --source-url "https://example.org/route" \
-  --source-type community --attribution "Verified route creator" --json
+  --activity gravel --source-url "https://ridewithgps.com/routes/12345" \
+  --source-type community --attribution "Original route creator" \
+  --source-warning "Retain any source-reported access caveat here" --json
 ```
 
 Search entitled GPX routes saved with community provenance using `search --provider local --source-type community --near "52.09,5.12" --activity gravel --date 2026-10-11 --json`. This is a private saved catalog, not public discovery or independent proof of authorship/riding. Dated search assesses closures before ranking; inspect the full evidence for final candidates.
@@ -71,6 +75,8 @@ Search entitled GPX routes saved with community provenance using `search --provi
 Only supply source type and attribution when the source supports them. GPX alone
 does not prove community authorship. Original imported bytes are preserved locally;
 do not share personal track details in chat or logs without the user's request.
+Retain source access warnings and show them before export/handoff approval. A
+planned club route is not proof of a completed ride or current permission to cycle.
 
 ## Check closures and recheck
 
@@ -110,6 +116,9 @@ that a route is safe. `no_known_conflict` does not mean guaranteed open. Date-on
 inputs mean the whole calendar day in the configured timezone (default
 Europe/Amsterdam). Date precision is preserved, including DST-length days.
 Ambiguous or nonexistent naive datetimes are rejected; use an explicit UTC offset.
+Read bounded `coverage_summaries` as coverage gaps with counts and sampled IDs,
+not as thousands of individual route conflicts. Reports retain at most 100
+route findings; their aggregate assessment also accounts for overflow.
 
 ## Optional places enrichment
 
@@ -145,6 +154,9 @@ bytes are preserved when available. An OSM export encodes its current mapped
 geometry into a new GPX, not an original provider GPX; gaps remain separate.
 Ride with GPS GPX retrieval requires configured credentials and provider permission
 for that route.
+Legacy saved OSM geometry is quarantined after upgrading to 0.3.1. If the CLI
+returns `OSM_GEOMETRY_REFRESH_REQUIRED`, use `get --route-id ... --refresh` before
+export or handoff. Do not bypass the guard with an old cached GPX.
 
 Delivery defaults to a read-only plan. Show the route, destination label, output
 path and side effects. `--account` is only a label. Get explicit user approval for

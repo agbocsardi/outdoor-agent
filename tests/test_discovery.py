@@ -333,6 +333,58 @@ async def test_live_search_returns_only_osm_and_partial_source_limitations() -> 
 
 
 @pytest.mark.asyncio
+async def test_empty_result_reports_filter_counts_and_provider_truncation(monkeypatch) -> None:
+    candidates = [
+        make_route(f"candidate-{index}", name=f"Candidate {index}").model_copy(
+            update={
+                "activity": Activity.gravel,
+                "geometry": Geometry(
+                    type="MultiLineString",
+                    coordinates=[[(5.3, 51.7), (5.301, 51.7)], [(5.31, 51.7), (5.311, 51.7)]],
+                ),
+                "start_lat": 51.7,
+                "start_lon": 5.3,
+                "distance_m": None,
+                "is_loop": None,
+                "geometry_quality": "disconnected",
+            }
+        )
+        for index in range(200)
+    ]
+
+    async def fake_search(self, criteria: ProviderSearchCriteria) -> SearchResult:
+        return SearchResult(
+            routes=candidates,
+            warnings=[
+                "Overpass returned at least 200 relations; additional matches may be omitted."
+            ],
+        )
+
+    monkeypatch.setattr(OSMDiscoveryAdapter, "search", fake_search)
+    result = await search_routes(
+        load_settings(),
+        SearchCriteria(
+            near="51.6978,5.3037",
+            activity=Activity.gravel,
+            distance_min_m=20_000,
+            distance_max_m=35_000,
+            loop="required",
+            radius_km=20,
+        ),
+    )
+    assert result.routes == []
+    assert result.coverage.provider_candidates == 200
+    assert result.coverage.unique_candidates == 200
+    assert result.coverage.shape_excluded == 200
+    assert result.coverage.geometry_not_complete == 200
+    assert result.coverage.unknown_distance_with_distance_filter == 200
+    assert result.coverage.eligible == 0
+    assert result.coverage.provider_truncated is True
+    assert any("empty result does not show" in warning for warning in result.warnings)
+    assert any("--provider local" in warning for warning in result.warnings)
+
+
+@pytest.mark.asyncio
 async def test_community_only_fails_typed_without_fixture_fallback() -> None:
     with pytest.raises(OutdoorError) as error:
         await search_routes(

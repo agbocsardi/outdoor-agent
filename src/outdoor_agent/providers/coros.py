@@ -68,6 +68,7 @@ class ManualCorosProvider:
                 "Choose Sync With Your Device in the COROS app; verify the route on the watch.",
             ],
             warnings=[
+                *route.warnings,
                 "No supported automatic Ride with GPS pin/send action was verified. Nothing is submitted to COROS.",
                 "GPX route navigation does not install offline map tiles.",
             ],
