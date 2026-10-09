@@ -34,6 +34,7 @@ class Settings(Model):
     places_cache_ttl_seconds: int = Field(default=0, ge=0, le=86400)
     ride_api_key: str | None = Field(default=None, exclude=True, repr=False)
     ride_auth_token: str | None = Field(default=None, exclude=True, repr=False)
+    ride_cli_path: str | None = None
     ranking_weights: dict[str, float] = Field(
         default_factory=lambda: {
             "distance": 1.0,

@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import shutil
 import sqlite3
 import sys
 from enum import StrEnum
@@ -27,6 +26,7 @@ from outdoor_agent.models.time import parse_window
 from outdoor_agent.providers.http import HTTPClient
 from outdoor_agent.providers.ndw import FeedFetchResult, fetch_feeds
 from outdoor_agent.providers.registry import Provider, registry
+from outdoor_agent.providers.ride_cli import RideCLI
 from outdoor_agent.providers.ridewithgps import RideWithGPS
 from outdoor_agent.services.delivery import (
     ExportResult,
@@ -208,10 +208,10 @@ def doctor(
 ) -> None:
     """Diagnose the local installation without network probes or credential values."""
     config = settings(ctx)
+    ride_cli_installed = RideCLI(config).executable() is not None
+    has_credentials = bool(config.ride_api_key and config.ride_auth_token)
     auth = {
-        "state": "auth_required"
-        if not (config.ride_api_key and config.ride_auth_token)
-        else "unverified"
+        "state": "auth_required" if not has_credentials and not ride_cli_installed else "unverified"
     }
     if probe:
         if "ridewithgps" in config.disabled_providers:
@@ -239,7 +239,7 @@ def doctor(
             "database_exists": (config.data_dir / "state.sqlite3").is_file(),
             "default_timezone": config.default_timezone,
             "default_region": config.default_region,
-            "ride_cli_installed": shutil.which("ride") is not None,
+            "ride_cli_installed": ride_cli_installed,
             "ride_config_configured": bool(os.getenv("RIDE_CONFIG_DIR")),
             "ride_auth_state": auth["state"],
             "ride_auth": auth,

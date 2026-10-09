@@ -16,6 +16,7 @@ from outdoor_agent.geo.gpx import MAX_BYTES, MAX_POINTS, inspect_gpx, validate_s
 from outdoor_agent.models.routes import Activity, Geometry, GPXArtifact, Route, SourceType
 from outdoor_agent.providers.http import FetchResult, HTTPClient
 from outdoor_agent.providers.registry import Provider, registry
+from outdoor_agent.providers.ride_cli import RideCLI
 
 _ACTIVITY = {
     "cycling:road": Activity.road,
@@ -42,6 +43,7 @@ class RideWithGPS:
     def __init__(self, settings: Settings, http: HTTPClient) -> None:
         self.settings = settings
         self.http = http
+        self.cli = RideCLI(settings)
         self.declaration: Provider = next(
             item for item in registry() if item.provider == "ridewithgps"
         )
@@ -62,33 +64,47 @@ class RideWithGPS:
             "x-rwgps-auth-token": self.settings.ride_auth_token,
         }
 
-    async def _fetch_authenticated(self, method: str, url: str, *, max_bytes: int) -> FetchResult:
-        headers = self._headers()
-        try:
-            return await self.http.fetch(
-                method,
-                url,
-                provider="ridewithgps",
-                headers=headers,
-                persist=False,
-                ttl=0,
-                max_bytes=max_bytes,
-            )
-        except OutdoorError as exc:
-            if exc.code == "AUTH_REQUIRED":
-                raise OutdoorError(
-                    "AUTH_EXPIRED",
-                    "Configured Ride with GPS credentials were rejected; refresh the credentials securely.",
-                    3,
+    def _has_credentials(self) -> bool:
+        return bool(self.settings.ride_api_key and self.settings.ride_auth_token)
+
+    async def _fetch_authenticated(self, path: str, *, max_bytes: int) -> FetchResult:
+        if self._has_credentials():
+            try:
+                return await self.http.fetch(
+                    "GET",
+                    f"https://ridewithgps.com{path}",
                     provider="ridewithgps",
-                ) from exc
-            raise
+                    headers=self._headers(),
+                    persist=False,
+                    ttl=0,
+                    max_bytes=max_bytes,
+                )
+            except OutdoorError as exc:
+                if exc.code == "AUTH_REQUIRED":
+                    raise OutdoorError(
+                        "AUTH_EXPIRED",
+                        "Configured Ride with GPS credentials were rejected; refresh the credentials securely.",
+                        3,
+                        provider="ridewithgps",
+                    ) from exc
+                raise
+        if self.cli.executable() is None:
+            raise OutdoorError(
+                "AUTH_REQUIRED",
+                "Ride with GPS needs an authenticated ride CLI or configured credentials.",
+                3,
+                provider="ridewithgps",
+                suggestions=[
+                    "Run `ride login` to authenticate the installed ride CLI.",
+                    "Or configure RIDEWITHGPS_API_KEY and RIDEWITHGPS_AUTH_TOKEN securely.",
+                ],
+            )
+        return await self.cli.fetch(path, max_bytes=max_bytes)
 
     async def get(self, route_id: str) -> Route:
         value = numeric_route_id(route_id)
         result = await self._fetch_authenticated(
-            "GET",
-            f"https://ridewithgps.com/api/v1/routes/{value}.json",
+            f"/api/v1/routes/{value}.json",
             max_bytes=16 * 1024 * 1024,
         )
         try:
@@ -161,8 +177,7 @@ class RideWithGPS:
     async def export_bytes(self, route_id: str) -> bytes:
         value = numeric_route_id(route_id)
         result = await self._fetch_authenticated(
-            "GET",
-            f"https://ridewithgps.com/api/v1/routes/{value}.gpx",
+            f"/api/v1/routes/{value}.gpx",
             max_bytes=MAX_BYTES,
         )
         # Entitlement is enforced by the provider; successful bytes must still be valid GPX.
@@ -188,8 +203,7 @@ class RideWithGPS:
 
     async def probe_auth(self) -> dict[str, str]:
         result = await self._fetch_authenticated(
-            "GET",
-            "https://ridewithgps.com/api/v1/users/current",
+            "/api/v1/users/current",
             max_bytes=1024 * 1024,
         )
         try:
@@ -207,6 +221,7 @@ class RideWithGPS:
         return {
             "state": "authenticated",
             "account_reference": hashlib.sha256(str(account_id).encode()).hexdigest()[:12],
+            "transport": "http" if self._has_credentials() else "ride_cli",
         }
 
 
