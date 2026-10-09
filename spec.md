@@ -711,3 +711,38 @@ A meaningful v1 demo:
 > Always run `uv sync --dev`, `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy src` (and address failures). If repository restrictions prevent a command, explain the blocker.
 >
 > Make small coherent commits / PRs; document what is genuinely implemented, what remains unverified, exact setup commands, and how to test each milestone. Ask for human approval before any third-party account writes or secrets.
+
+
+## Implementation status — 2026-10-09
+
+Version 0.3.1 implements the required CLI command targets and the permitted manual
+provider fallbacks: bounded OSM and local saved-community catalog discovery,
+bbox/point-to-point preferences, transparent deduplication/ranking, dated closure
+ranking, lossless GPX import/export, authenticated documented RWGPS read/export
+adapters, NDW direct-GML analysis, optional OSM access restrictions, saved-route
+rechecks, opt-in budgeted Google Places, and confirmed, audited, idempotent manual
+COROS handoff. Concrete provider adapters implement the typed boundaries; versioned
+schemas and the thin OpenClaw skill cover the workflows. GPX export and delivery
+both default to read-only plans and require `--confirm` to prepare local files.
+
+The acceptance matrix in `docs/spec-acceptance.md` distinguishes code verification
+from external gates. Saved community provenance is supplied by the user; no public
+community-route catalog is verified. OSM relations remain `official_trail`.
+Alert-C references remain unresolved rather than falsely decoded; NDW trail,
+future-horizon and source coverage are uncertain. Configured RWGPS credentials
+rejected by the API yield `AUTH_EXPIRED`, without exposing credentials. No paid
+Google request or authenticated RWGPS account probe was performed. COROS account
+submission, physical watch arrival and loading on a target OpenClaw host remain
+unverified. Timer/MCP and broader provider integrations are optional follow-ups.
+These limitations never silently produce fixture discoveries or claims of complete
+coverage or watch delivery. See `docs/cli-demo.md` for executed verification.
+
+
+The 0.3.1 review fixes bounded closure summaries for unlocatable nationwide records,
+rejects invalid OSM member geometry without connecting surviving coordinates, and
+quarantines legacy OSM geometry/artifacts until refreshed. Search exposes coverage
+and filter diagnostics. A permitted, attributed club-published 26.2 km gravel loop
+near Den Bosch was searched from the saved catalog, checked against live NDW/OSM
+evidence and prepared losslessly for manual COROS import. Its source flags cycling
+restrictions and its live assessment has possible conflicts and unknown coverage;
+this verifies the software workflow but does not establish a ride-ready route.

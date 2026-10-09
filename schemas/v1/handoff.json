@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "route_id": {
+      "title": "Route Id",
+      "type": "string"
+    },
+    "target": {
+      "default": "coros",
+      "title": "Target",
+      "type": "string"
+    },
+    "account": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account"
+    },
+    "side_effects": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Side Effects",
+      "type": "array"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "dry_run": {
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "path": {
+      "title": "Path",
+      "type": "string"
+    },
+    "source_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Source Url"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "already_prepared": {
+      "default": false,
+      "title": "Already Prepared",
+      "type": "boolean"
+    },
+    "instructions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Instructions",
+      "type": "array"
+    },
+    "watch_status": {
+      "default": "watch_sync_unverified",
+      "title": "Watch Status",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "route_id",
+    "side_effects",
+    "status",
+    "dry_run",
+    "path",
+    "source_url",
+    "idempotency_key",
+    "instructions"
+  ],
+  "title": "HandoffResult",
+  "type": "object"
+}

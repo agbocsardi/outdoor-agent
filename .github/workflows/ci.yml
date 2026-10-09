@@ -1,0 +1,22 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: '0.12.19'
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --frozen --dev
+      - run: uv lock --check
+      - run: uv run --frozen pytest --cov=outdoor_agent.geo --cov=outdoor_agent.models --cov-report=term-missing
+      - run: uv run --frozen ruff check .
+      - run: uv run --frozen ruff format --check .
+      - run: uv run --frozen mypy src

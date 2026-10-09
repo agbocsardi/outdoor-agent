@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mc:messageContainer xmlns:mc="http://datex2.eu/schema/3/messageContainer"
+ xmlns:sit="http://datex2.eu/schema/3/situation" xmlns:com="http://datex2.eu/schema/3/common"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" modelBaseVersion="3">
+  <sit:situationPublication modelBaseVersion="3">
+    <com:publicationTime>2026-10-09T10:00:00Z</com:publicationTime>
+    <sit:situation id="recurring-night-work">
+      <sit:situationRecord xsi:type="sit:RoadOrCarriagewayOrLaneManagement" id="night-work">
+        <sit:validity><com:validityTimeSpecification>
+          <com:overallStartTime>2026-10-10T00:00:00Z</com:overallStartTime>
+          <com:overallEndTime>2026-10-15T00:00:00Z</com:overallEndTime>
+        </com:validityTimeSpecification></sit:validity>
+        <sit:recurringTimePeriodOfDay><com:startTimeOfPeriod>22:00:00</com:startTimeOfPeriod><com:endTimeOfPeriod>06:00:00</com:endTimeOfPeriod></sit:recurringTimePeriodOfDay>
+        <sit:recurringDayWeekMonthPeriod><com:applicableDay>monday</com:applicableDay><com:applicableDay>tuesday</com:applicableDay><com:applicableDay>wednesday</com:applicableDay><com:applicableDay>thursday</com:applicableDay><com:applicableDay>friday</com:applicableDay></sit:recurringDayWeekMonthPeriod>
+        <sit:roadOrCarriagewayOrLaneManagementType>carriagewayClosures</sit:roadOrCarriagewayOrLaneManagementType>
+      </sit:situationRecord>
+    </sit:situation>
+  </sit:situationPublication>
+</mc:messageContainer>
