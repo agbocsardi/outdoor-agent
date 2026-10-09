@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic fixture: Alert-C reference with no direct GML line, so geometry stays unresolved. -->
+<mc:messageContainer xmlns:mc="http://datex2.eu/schema/3/messageContainer" xmlns:sit="http://datex2.eu/schema/3/situation" xmlns:com="http://datex2.eu/schema/3/common" xmlns:loc="http://datex2.eu/schema/3/locationReferencing" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" modelBaseVersion="3">
+  <mc:payload xsi:type="sit:SituationPublication" modelBaseVersion="3">
+    <com:publicationTime>2026-10-09T10:00:00Z</com:publicationTime>
+    <sit:situation id="alert-c-unresolved">
+      <sit:situationVersionTime>2026-10-09T09:00:00Z</sit:situationVersionTime>
+      <sit:situationRecord xsi:type="sit:CyclewayClosure" id="alert-c-unresolved-record">
+        <sit:validity><com:validityTimeSpecification><com:overallStartTime>2026-10-10T00:00:00Z</com:overallStartTime><com:overallEndTime>2026-10-12T00:00:00Z</com:overallEndTime></com:validityTimeSpecification></sit:validity>
+        <sit:source><com:sourceName><com:values><com:value>Fixture municipality</com:value></com:values></com:sourceName></sit:source>
+        <sit:roadOrCarriagewayOrLaneManagementType>cyclewayClosure</sit:roadOrCarriagewayOrLaneManagementType>
+        <sit:locationReference xsi:type="loc:ItineraryByIndexedLocations"><loc:locationContainedInItinerary><loc:location xsi:type="loc:SingleRoadLinearLocation"><loc:alertCLinear xsi:type="loc:AlertCMethod4Linear"><loc:alertCLocationCountryCode>8</loc:alertCLocationCountryCode><loc:alertCLocationTableNumber>6.13</loc:alertCLocationTableNumber><loc:alertCLocationTableVersion>A</loc:alertCLocationTableVersion><loc:specificLocation>7979</loc:specificLocation></loc:alertCLinear></loc:location></loc:locationContainedInItinerary></sit:locationReference>
+      </sit:situationRecord>
+    </sit:situation>
+  </mc:payload>
+</mc:messageContainer>

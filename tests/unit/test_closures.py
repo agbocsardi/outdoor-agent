@@ -600,3 +600,104 @@ async def test_route_specific_findings_are_capped_but_omissions_are_summarized(
     assert summary.reason == "route_finding_limit"
     assert summary.count == 5
     assert len(summary.sample_event_ids) == 5
+
+
+@pytest.mark.asyncio
+async def test_inside_route_fixture_is_known_conflict(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures/closures_inside.xml"
+    report = await assess_route(
+        _settings(tmp_path), _route(), "2026-10-11", Activity.gravel, fixture
+    )
+    assert report.status == "known_conflict"
+    assert report.source_status == "fixture"
+    assert report.fixture_mode is True
+    finding = next(item for item in report.findings if item.event_id == "inside-route-record")
+    assert finding.classification == "known_conflict"
+    assert finding.temporal_overlap is True
+    assert finding.mode_overlap is True
+    assert finding.overlap_length_m is not None and finding.overlap_length_m > 0
+    assert finding.distance_along_route_m is not None
+    event = next(item for item in report.events if item.id == finding.event_id)
+    assert event.geometry_quality == "precise"
+    assert event.timing_quality == "precise"
+    assert event.affected_modes == ["bike"]
+
+
+@pytest.mark.asyncio
+async def test_outside_route_fixture_near_is_possible_and_distant_is_ignored(
+    tmp_path: Path,
+) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures/closures_outside.xml"
+    report = await assess_route(
+        _settings(tmp_path), _route(), "2026-10-11", Activity.gravel, fixture
+    )
+    assert report.status == "possible_conflict"
+    assert report.status != "known_conflict"
+    assert all(item.classification != "known_conflict" for item in report.findings)
+    near = next(item for item in report.findings if item.event_id == "parallel-near-record")
+    assert near.classification == "possible_conflict"
+    assert near.overlap_length_m is None
+    assert near.min_distance_to_route_m is not None
+    assert 10 <= near.min_distance_to_route_m <= 20
+    assert near.temporal_overlap is True
+    assert near.mode_overlap is True
+    assert all(item.event_id != "distant-record" for item in report.findings)
+
+
+@pytest.mark.asyncio
+async def test_distant_route_fixture_alone_is_no_known_conflict(tmp_path: Path) -> None:
+    from dataclasses import replace
+    from datetime import UTC, datetime
+
+    from outdoor_agent.providers.ndw import FeedFetchResult, parse_fixture
+
+    fixture = Path(__file__).parents[1] / "fixtures/closures_outside.xml"
+    snapshot = parse_fixture(fixture)
+    now = datetime.now(UTC)
+    # Fresh observation keeps the report out of the stale-coverage downgrade so the
+    # no-evidence outcome of a clearly distant event is asserted directly.
+    distant_only = replace(
+        snapshot,
+        events=[event for event in snapshot.events if event.id == "distant-record"],
+        fetched_at=now,
+        source_timestamp=now,
+    )
+    report = await assess_route(
+        _settings(tmp_path),
+        _route(),
+        "2026-10-11",
+        Activity.gravel,
+        feed_result=FeedFetchResult(snapshots=[distant_only], errors=[]),
+    )
+    assert report.status == "no_known_conflict"
+    assert report.findings == []
+    assert report.unknown_coverage is False
+
+
+@pytest.mark.asyncio
+async def test_unresolved_alertc_fixture_is_summarized_not_emitted(tmp_path: Path) -> None:
+    from outdoor_agent.providers.ndw import parse_fixture
+
+    fixture = Path(__file__).parents[1] / "fixtures/closures_unresolved.xml"
+    parsed = next(
+        event for event in parse_fixture(fixture).events if event.id == "alert-c-unresolved-record"
+    )
+    assert parsed.geometry is None
+    assert parsed.geometry_quality == "unresolved"
+    assert parsed.location_reference is not None
+    assert "AlertCMethod4Linear" in parsed.location_reference
+
+    report = await assess_route(
+        _settings(tmp_path), _route(), "2026-10-11", Activity.gravel, fixture
+    )
+    assert report.status == "coverage_unknown"
+    assert report.unknown_coverage is True
+    assert report.findings == []
+    assert report.events == []
+    assert len(report.coverage_summaries) == 1
+    summary = report.coverage_summaries[0]
+    assert summary.reason == "unresolved_location"
+    assert summary.count == 1
+    assert summary.sample_event_ids == ["alert-c-unresolved-record"]
+    assert len(summary.digest) == 64
+    assert any("without route-locatable geometry" in warning for warning in report.warnings)
