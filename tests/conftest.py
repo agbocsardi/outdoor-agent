@@ -30,6 +30,8 @@ def isolated_config(
 
     monkeypatch.setattr(socket.socket, "connect", denied)
     monkeypatch.setattr(socket.socket, "connect_ex", denied)
+    # No baseline test may spawn the real ride CLI; tests inject a fake via ride_cli_path.
+    monkeypatch.setattr("outdoor_agent.providers.ride_cli.which", lambda name: None)
 
 
 @pytest.fixture
