@@ -47,10 +47,11 @@ The supported seeds are an explicit public route URL and a local GPX import.
 `page` and `page_size` (20-200) through the authenticated transport, then follows
 `meta.pagination.next_page_url` by extracting only its page number and re-issuing a
 validated `/api/v1/routes.json` request; an arbitrary URL is never fetched. It stops
-at a null `next_page_url`, an empty page, or the requested limit, and is hard-bounded
-to 20 pages and 500 records. Reaching a bound adds a truncation warning to the
-returned routes. Activity and geographic filters are applied client-side because the
-endpoint has none. A malformed or missing pagination object is a typed
+at a null `next_page_url`, an empty page, or the requested matched-result limit, and
+is hard-bounded to 20 pages and 500 scanned records. Activity and geographic (bbox)
+filters are applied client-side while paging, so an in-area match beyond the
+matched-result cap is not lost; the page/record scan budget is independent of that
+cap, and reaching a scan bound adds the truncation warning to the returned routes. A malformed or missing pagination object is a typed
 `PROVIDER_SCHEMA_INVALID` error. An account with zero saved routes returns
 `RIDEWITHGPS_NO_SAVED_ROUTES` (exit 5) with a suggestion to save routes, fetch one
 explicit public route URL, or import a local GPX; it is never an empty success.

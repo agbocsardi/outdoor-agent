@@ -54,6 +54,14 @@ selected saved-only provider emits an explicit scope warning and the
 `--source-type community` gate still requires `--provider local`. A read-only probe of
 the current account on 2026-10-10 returned an empty page, recorded as dated evidence.
 
+A follow-up review of this range fixed three findings: saved-route activity/bbox
+filters now apply during pagination so an in-area match beyond the matched-result cap
+is not lost (the page/record scan budget is independent of that cap); a malformed
+upstream route id is reclassified as `PROVIDER_SCHEMA_INVALID` rather than user input;
+and a Ride CLI stderr diagnostic overflow is reported as
+`PROVIDER_DIAGNOSTIC_TOO_LARGE`, distinct from a stdout payload overflow. The
+20-35 km gravel-loop discovery target near Den Bosch remains unverified.
+
 ## Repository verification — 0.3.0
 
 The final offline run passed 270 tests with one explicitly opted-in live test skipped, 90% full-package coverage, and clean Ruff lint/format, strict mypy and lock checks. `uv sync --dev` and `uv build` succeeded. The installed wheel ran `doctor --json` from outside the checkout. The explicit synthetic community catalog contract covers import → bbox/shape/date-aware discovery → uncertainty disclosure → dry-run → confirmed lossless manual GPX handoff; it is labeled synthetic and does not prove public community access.
