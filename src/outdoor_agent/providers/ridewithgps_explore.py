@@ -290,9 +290,12 @@ def _route_from_item(item: dict[str, Any], fetched_at: datetime) -> Route:
             raw_metadata[key] = _scalar(item[key])
     value = str(route_id)
     try:
+        # The canonical provider stays "ridewithgps" so the normalized id, the
+        # authenticated detail/export factories and deduplication all resolve;
+        # "ridewithgps_public" is only the discovery-source declaration name.
         return Route(
             id=f"ridewithgps:{value}",
-            provider="ridewithgps_public",
+            provider="ridewithgps",
             provider_route_id=value,
             source_url=source_url,
             source_type=SourceType.community,

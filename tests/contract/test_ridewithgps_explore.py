@@ -376,8 +376,17 @@ async def test_route_provenance_geometry_and_metrics(tmp_path: Path) -> None:
     result, _ = await run(config(tmp_path), handler, criteria)
     route = result.routes[0]
     assert route.id == "ridewithgps:7"
-    assert route.provider == "ridewithgps_public"
+    assert route.provider == "ridewithgps"
     assert route.provider_route_id == "7"
+    # The canonical provider must resolve the existing authenticated detail/export
+    # factories even though discovery came from the ridewithgps_public source.
+    from outdoor_agent.services.delivery import (
+        DETAIL_PROVIDER_FACTORIES,
+        EXPORT_PROVIDER_FACTORIES,
+    )
+
+    assert route.provider in DETAIL_PROVIDER_FACTORIES
+    assert route.provider in EXPORT_PROVIDER_FACTORIES
     assert route.source_url == "https://ridewithgps.com/routes/7"
     assert route.source_type == SourceType.community
     assert "Ada Rider" in route.attribution

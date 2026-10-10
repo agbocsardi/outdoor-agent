@@ -521,7 +521,7 @@ def test_search_ridewithgps_public_community_executes_explore_cli(monkeypatch) -
     assert payload["status"] == "partial"
     assert any("experimental" in warning for warning in payload["warnings"])
     route = payload["data"]["routes"][0]["route"]
-    assert route["provider"] == "ridewithgps_public"
+    assert route["provider"] == "ridewithgps"
     assert route["source_type"] == "community"
     assert route["id"] == "ridewithgps:4242"
     assert route["geometry"] is None

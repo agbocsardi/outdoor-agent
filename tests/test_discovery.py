@@ -688,7 +688,7 @@ async def test_ridewithgps_public_community_search_executes_explore(monkeypatch,
     assert calls == ["/explore.json"]
     assert [item.route.id for item in result.routes] == ["ridewithgps:1"]
     assert result.routes[0].route.source_type == SourceType.community
-    assert result.routes[0].route.provider == "ridewithgps_public"
+    assert result.routes[0].route.provider == "ridewithgps"
     assert result.provider_status[0].provider == "ridewithgps_public"
     assert any("experimental and degraded" in warning for warning in result.warnings)
     assert any("undocumented website endpoint" in warning for warning in result.warnings)
