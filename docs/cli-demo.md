@@ -165,3 +165,43 @@ assessment and lossless COROS-compatible local preparation. It does **not**
 establish a ride-ready recommendation: source access restrictions need verification,
 public community-catalog search remains unavailable, and no physical watch import
 was tested. Paid/authenticated providers and target OpenClaw loading remain untested.
+
+## 2026-10-10 authenticated Ride with GPS workflow
+
+The installed `ride` CLI was already logged in, so outdoor-agent used it as the
+credential owner instead of a second key/token setup. Commands ran against isolated
+`OUTDOOR_AGENT_DATA_DIR`/`OUTDOOR_AGENT_CACHE_DIR`; no token, credential or track was
+printed, and no account write was made.
+
+```bash
+uv run outdoor-agent doctor --probe --json
+# ride_auth_state=authenticated, ride_auth.transport=ride_cli
+
+uv run outdoor-agent get --route-id https://ridewithgps.com/routes/100 --json
+# id=ridewithgps:100, complete geometry, source URL and creator attribution retained
+
+uv run outdoor-agent search --provider local --source-type community \
+  --near "44.05206,-123.1019" --radius-km 5 --activity road --json
+# the URL-fetched route is found in the saved catalog
+
+uv run outdoor-agent export --route-id https://ridewithgps.com/routes/100 \
+  --confirm --output ./100.gpx --json
+# 23,597 bytes, original_bytes=true, sha256 1147e54401fa9350646c03899a46f5d7c5780ac0a6ddf473abbd3f28cd572d00
+
+uv run outdoor-agent search --provider ridewithgps --near "44.05206,-123.1019" \
+  --radius-km 5 --activity road --json
+# exit 5 RIDEWITHGPS_NO_SAVED_ROUTES: the authenticated account's saved-route list is empty
+```
+
+The exported GPX matched a direct `ride api get /api/v1/routes/100.gpx` byte-for-byte
+(identical SHA-256). The documented `GET /api/v1/routes.json` endpoint is paginated and
+scoped to the authenticated user, not a public catalog; the current account returned an
+empty page on 2026-10-10, so no saved route was available to ingest. Public community
+discovery remains unavailable.
+
+**Item 3 limitation reported plainly:** no existing 20-35 km gravel loop starting within
+20 km of Den Bosch could be supplied by discovery, because the authenticated Ride with
+GPS account has no saved routes and no verified public community catalog is configured.
+The supported seeds remain an explicit public route URL (demonstrated above) and an
+entitled local GPX (demonstrated in the 0.3.1 section). This is a discovery-coverage
+limitation, not a claim that no such route exists.
