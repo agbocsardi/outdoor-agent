@@ -198,7 +198,10 @@ class RideWithGPS:
 
     def _route_from_item(self, item: dict[str, Any], fetched_at: datetime) -> Route:
         """Parse one documented route record; validation, attribution and warnings are shared."""
-        value = numeric_route_id(str(item["id"]))
+        try:
+            value = numeric_route_id(str(item["id"]))
+        except OutdoorError as exc:
+            raise ValueError("Invalid provider route id") from exc
         points = item.get("track_points", [])
         if not isinstance(points, list) or len(points) > MAX_POINTS:
             raise ValueError("Invalid geometry")
@@ -273,7 +276,11 @@ class RideWithGPS:
             ) from exc
 
     async def list_saved_routes(
-        self, *, limit: int, activity: Activity | None = None
+        self,
+        *,
+        limit: int,
+        activity: Activity | None = None,
+        bbox: tuple[float, float, float, float] | None = None,
     ) -> list[Route]:
         """List the authenticated user's own saved routes, bounded and paginated.
 
@@ -288,9 +295,9 @@ class RideWithGPS:
         truncated = False
         while page is not None:
             if pages >= _MAX_SAVED_PAGES:
-                truncated = True
+                truncated = page is not None
                 break
-            if len(_matching_activity(records, activity)) >= limit:
+            if len(_matching(records, activity, bbox)) >= limit:
                 break
             result = await self._fetch_authenticated(
                 _ROUTE_LIST_PATH,
@@ -327,7 +334,7 @@ class RideWithGPS:
                     "Or import an entitled local GPX with `import-gpx` and search --provider local.",
                 ],
             )
-        matching = _matching_activity(records, activity)
+        matching = _matching(records, activity, bbox)
         if truncated:
             for route in matching:
                 route.warnings.append(_SAVED_TRUNCATION_WARNING)
@@ -393,18 +400,22 @@ class RideWithGPSDiscoveryAdapter:
 
     async def search(self, criteria: SearchCriteria) -> SearchResult:
         routes = await self.provider.list_saved_routes(
-            limit=criteria.limit, activity=criteria.activity
+            limit=criteria.limit, activity=criteria.activity, bbox=criteria.bbox
         )
-        return SearchResult(
-            routes=[route for route in routes if within_bbox(route, criteria.bbox)],
-            warnings=[],
-        )
+        return SearchResult(routes=routes, warnings=[])
 
 
-def _matching_activity(routes: list[Route], activity: Activity | None) -> list[Route]:
-    if activity is None:
-        return routes
-    return [route for route in routes if _activity_compatible(activity, route.activity)]
+def _matching(
+    routes: list[Route],
+    activity: Activity | None,
+    bbox: tuple[float, float, float, float] | None,
+) -> list[Route]:
+    return [
+        route
+        for route in routes
+        if (activity is None or _activity_compatible(activity, route.activity))
+        and (bbox is None or within_bbox(route, bbox))
+    ]
 
 
 def _timestamp(value: Any) -> datetime | None:
