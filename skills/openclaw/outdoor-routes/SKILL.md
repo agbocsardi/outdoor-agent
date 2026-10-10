@@ -152,8 +152,11 @@ Export GPX only when requested. Existing output files are protected; use
 `--overwrite` only when the user has requested replacement. Original imported GPX
 bytes are preserved when available. An OSM export encodes its current mapped
 geometry into a new GPX, not an original provider GPX; gaps remain separate.
-Ride with GPS GPX retrieval requires configured credentials and provider permission
-for that route.
+Ride with GPS GPX retrieval uses the authenticated `ride` CLI login by default (or,
+when explicitly configured, `RIDEWITHGPS_API_KEY`/`RIDEWITHGPS_AUTH_TOKEN`) and
+provider permission for that route. `search --provider ridewithgps` lists only the
+authenticated account's own saved routes; an empty account returns
+`RIDEWITHGPS_NO_SAVED_ROUTES`, not an empty success.
 Legacy saved OSM geometry is quarantined after upgrading to 0.3.1. If the CLI
 returns `OSM_GEOMETRY_REFRESH_REQUIRED`, use `get --route-id ... --refresh` before
 export or handoff. Do not bypass the guard with an old cached GPX.
@@ -180,12 +183,15 @@ app and verify route arrival on the physical watch.
 
 ## Provider credentials and privacy
 
-Never ask the user to paste credentials into chat. Ride with GPS reads use
-`RIDEWITHGPS_API_KEY` and `RIDEWITHGPS_AUTH_TOKEN` from secure environment injection
-or private TOML and send them only in provider headers. `doctor --probe` is an
-explicit read-only authentication request; ordinary `doctor` is local. Authenticated
-metadata or permitted GPX export does not establish public route search or pin/write
-capability. Google calls require separate explicit operator opt-in and an API key.
+Never ask the user to paste credentials into chat. Ride with GPS reads use the
+installed `ride` CLI login by default (`ride login`); outdoor-agent never reads or
+logs the CLI's credentials. As an explicit alternative, `RIDEWITHGPS_API_KEY` and
+`RIDEWITHGPS_AUTH_TOKEN` may come from secure environment injection or private TOML
+and are sent only in provider headers. `doctor --probe` is an explicit read-only
+authentication request; ordinary `doctor` is local. Authenticated metadata, the
+account-scoped saved-route list, or permitted GPX export does not establish public
+route search or pin/write capability. Google calls require separate explicit operator
+opt-in and an API key.
 
 The CLI does not load `.env` automatically. Keep configuration, SQLite state, HTTP
 cache and original GPX files private. Provider requests use HTTPS public endpoints,

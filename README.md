@@ -58,7 +58,7 @@ After upgrading to 0.3.1, previously saved OSM geometry is quarantined until
 handoffs are blocked with `OSM_GEOMETRY_REFRESH_REQUIRED`. Original local GPX
 imports remain available.
 
-To retrieve Ride with GPS metadata, configure `RIDEWITHGPS_API_KEY` and `RIDEWITHGPS_AUTH_TOKEN` through secure environment injection or private TOML. These credentials are sent in provider headers. The adapter supports authenticated route metadata and GPX export only when the provider permits the requested route. It does not provide public community search, route pinning, or account writes. `doctor --probe` performs an explicit read-only authentication request; ordinary `doctor` does not contact providers. Credential presence is not proof that the credentials work.
+To read Ride with GPS data, outdoor-agent uses the authenticated `ride` CLI login by default (run `ride login`); the CLI owns and refreshes its own credentials, and outdoor-agent never reads or logs them. As an explicit alternative, configure `RIDEWITHGPS_API_KEY` and `RIDEWITHGPS_AUTH_TOKEN` through secure environment injection or private TOML; those are sent in provider headers. `get --route-id https://ridewithgps.com/routes/<id>` fetches a known public or permitted route, `search --provider ridewithgps` lists only the authenticated account's own saved routes (paginated, not a public catalog), and `export --confirm` retrieves original GPX bytes only when the provider permits the requested route. The adapter does not provide public community search, route pinning, or account writes. `doctor --probe` performs an explicit read-only authentication request; ordinary `doctor` does not contact providers. Authentication is not proof that the account may read or export a given route.
 
 ## Inspect or import GPX
 
