@@ -46,6 +46,17 @@ def item(route_id: int, activity: str = "cycling:gravel") -> dict[str, Any]:
     }
 
 
+def outside_item(route_id: int, activity: str = "cycling:gravel") -> dict[str, Any]:
+    return {
+        **item(route_id, activity),
+        "first_lat": 10,
+        "first_lng": 10,
+        "last_lat": 10.01,
+        "last_lng": 10.01,
+        "track_points": [{"x": 10, "y": 10}, {"x": 10.01, "y": 10.01}],
+    }
+
+
 def page(routes: list[dict[str, Any]], next_page: str | None) -> dict[str, Any]:
     return {
         "routes": routes,
@@ -152,6 +163,109 @@ async def test_saved_routes_respect_limit_without_extra_pages(tmp_path: Path) ->
     assert len(routes) == 5
     assert calls == 1
     assert not any("page or record bound" in warning for warning in routes[0].warnings)
+
+
+BBOX = (51.9, 4.9, 52.1, 5.1)
+
+
+@pytest.mark.asyncio
+async def test_saved_routes_bbox_filters_before_limit(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page([outside_item(1), item(2)], None))
+
+    async with HTTPClient(config(tmp_path), transport=httpx.MockTransport(handler)) as http:
+        routes = await RideWithGPS(http.settings, http).list_saved_routes(limit=1, bbox=BBOX)
+    assert [route.id for route in routes] == ["ridewithgps:2"]
+
+
+@pytest.mark.asyncio
+async def test_saved_routes_bbox_match_follows_pagination(tmp_path: Path) -> None:
+    queries: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page_number = dict(request.url.params)["page"]
+        queries.append(page_number)
+        if page_number == "1":
+            return httpx.Response(
+                200,
+                json=page(
+                    [outside_item(1)],
+                    "https://ridewithgps.com/api/v1/routes.json?page=2&page_size=20",
+                ),
+            )
+        return httpx.Response(200, json=page([item(2)], None))
+
+    async with HTTPClient(config(tmp_path), transport=httpx.MockTransport(handler)) as http:
+        routes = await RideWithGPS(http.settings, http).list_saved_routes(limit=1, bbox=BBOX)
+    assert [route.id for route in routes] == ["ridewithgps:2"]
+    assert queries == ["1", "2"]
+
+
+@pytest.mark.asyncio
+async def test_saved_routes_truncation_warns_at_record_bound(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        page_number = int(request.url.params["page"])
+        records = [outside_item(page_number * 1000 + index) for index in range(200)]
+        records[0] = item(page_number * 1000)
+        return httpx.Response(
+            200,
+            json=page(
+                records,
+                f"https://ridewithgps.com/api/v1/routes.json?page={page_number + 1}&page_size=200",
+            ),
+        )
+
+    async with HTTPClient(config(tmp_path), transport=httpx.MockTransport(handler)) as http:
+        routes = await RideWithGPS(http.settings, http).list_saved_routes(limit=200, bbox=BBOX)
+    assert [route.id for route in routes] == [
+        "ridewithgps:1000",
+        "ridewithgps:2000",
+        "ridewithgps:3000",
+    ]
+    assert all(any("page or record bound" in warning for warning in r.warnings) for r in routes)
+
+
+@pytest.mark.asyncio
+async def test_saved_routes_malformed_provider_id_is_schema_error(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page([{**item(1), "id": "not-a-number"}], None))
+
+    async with HTTPClient(config(tmp_path), transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(OutdoorError) as error:
+            await RideWithGPS(http.settings, http).list_saved_routes(limit=10)
+    assert error.value.code == "PROVIDER_SCHEMA_INVALID"
+    assert error.value.provider == "ridewithgps"
+    assert error.value.exit_code == 4
+
+
+@pytest.mark.asyncio
+async def test_user_supplied_bad_route_id_stays_invalid_input(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no provider fetch expected for an invalid user id")
+
+    async with HTTPClient(config(tmp_path), transport=httpx.MockTransport(handler)) as http:
+        provider = RideWithGPS(http.settings, http)
+        with pytest.raises(OutdoorError) as get_error:
+            await provider.get("not-a-number")
+        with pytest.raises(OutdoorError) as export_error:
+            await provider.export_bytes("not-a-number")
+    assert get_error.value.code == "INVALID_ROUTE_ID"
+    assert get_error.value.exit_code == 2
+    assert export_error.value.code == "INVALID_ROUTE_ID"
+    assert export_error.value.exit_code == 2
+
+
+@pytest.mark.asyncio
+async def test_saved_route_adapter_finds_in_bbox_route_after_cap(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page([outside_item(1), item(2)], None))
+
+    async with HTTPClient(config(tmp_path), transport=httpx.MockTransport(handler)) as http:
+        adapter = RideWithGPSDiscoveryAdapter(RideWithGPS(http.settings, http))
+        result = await adapter.search(
+            ProviderSearchCriteria(activity=Activity.gravel, bbox=BBOX, limit=1)
+        )
+    assert [route.id for route in result.routes] == ["ridewithgps:2"]
 
 
 @pytest.mark.asyncio
