@@ -176,3 +176,129 @@ def test_bounded_read_only_live_acceptance(tmp_path: Path) -> None:
         or assessment["source_errors"]
         or assessment["unknown_coverage"]
     ), "closure assessment must expose source freshness or explicit uncertainty"
+
+
+DEN_BOSCH_CENTER = (5.3037, 51.6978)  # lon, lat
+DEN_BOSCH_NEAR = "51.6978,5.3037"
+_TRANSIENT_SEARCH_CODES = frozenset(
+    {"PROVIDER_UNAVAILABLE", "PROVIDER_TIMEOUT", "PROVIDERS_UNAVAILABLE", "PROVIDER_RATE_LIMITED"}
+)
+
+
+def test_den_bosch_gravel_loop_public_explore(tmp_path: Path) -> None:
+    """One bounded live proof of the experimental public Explore path.
+
+    Finds a 20-35 km gravel loop within 20 km of Den Bosch through the undocumented
+    public provider, then inspects one candidate through the permitted authenticated
+    detail/export/closure path. It distinguishes suitability, geometry, closure and
+    export uncertainty and never claims a ride-ready route.
+    """
+    from outdoor_agent.geo.geometry import distance_m
+
+    exit_code, found = _invoke(
+        "search",
+        "--provider",
+        "ridewithgps_public",
+        "--source-type",
+        "community",
+        "--near",
+        DEN_BOSCH_NEAR,
+        "--radius-km",
+        "20",
+        "--activity",
+        "gravel",
+        "--distance-km",
+        "20:35",
+        "--shape",
+        "loop",
+        "--limit",
+        "5",
+    )
+    if exit_code != 0:
+        code = found.get("error", {}).get("code", "UNKNOWN")
+        if code in _TRANSIENT_SEARCH_CODES:
+            _skip_unavailable("experimental public Explore search", found)
+        raise AssertionError(f"public Explore search failed: {found.get('error')}")
+    assert found["status"] in {"ok", "partial"}
+    statuses = {status["provider"]: status for status in found["data"]["provider_status"]}
+    assert "ridewithgps_public" in statuses
+    routes = found["data"]["routes"]
+    assert routes, f"no public Den Bosch gravel loop returned: {found.get('warnings')}"
+    assert any("experimental" in warning for warning in found["warnings"])
+
+    candidate = routes[0]["route"]
+    assert candidate["provider"] == "ridewithgps"
+    assert candidate["id"].startswith("ridewithgps:")
+    assert candidate["provider_route_id"] == candidate["id"].split(":", 1)[1]
+    assert (
+        candidate["source_url"]
+        == f"https://ridewithgps.com/routes/{candidate['provider_route_id']}"
+    )
+    assert candidate["source_type"] == "community"
+    assert candidate["attribution"] and "Ride with GPS" in candidate["attribution"]
+    assert candidate["activity"] == "gravel"
+    assert candidate["is_loop"] is True
+    assert candidate["distance_m"] is not None and 20000 <= candidate["distance_m"] <= 35000
+    start = (candidate["start_lon"], candidate["start_lat"])
+    assert distance_m(DEN_BOSCH_CENTER, start) <= 20_000
+
+    # Suitability is only a source label; the Explore record has no navigation geometry.
+    assert candidate["geometry"] is None
+    assert candidate["geometry_quality"] == "unknown"
+    assert any("navigation geometry" in warning for warning in candidate["warnings"])
+
+    route_id = candidate["id"]
+    exit_code, detail = _invoke("get", "--route-id", route_id, "--refresh")
+    if exit_code != 0:
+        _skip_unavailable("permitted Ride with GPS route detail", detail)
+    full = detail["data"]["route"]
+    assert full["provider"] == "ridewithgps"
+    assert full["geometry"] is not None
+    assert full["geometry_quality"] == "complete"
+    assert full["source_url"] == candidate["source_url"]
+    # The Explore record attributes by byline name; the documented API detail
+    # attributes by creator id, so only assert both are present and honest here.
+    assert full["attribution"] and "Ride with GPS" in full["attribution"]
+
+    first = tmp_path / "explore-original.gpx"
+    exit_code, exported = _invoke(
+        "export", "--route-id", route_id, "--confirm", "--output", str(first)
+    )
+    if exit_code != 0:
+        _skip_unavailable("permitted original GPX export", exported)
+    receipt = exported["data"]
+    data = first.read_bytes()
+    assert receipt["original_bytes"] is True
+    assert receipt["byte_count"] == len(data)
+    assert receipt["sha256"] == hashlib.sha256(data).hexdigest()
+    assert inspect_gpx(data).point_count >= 2
+    repeated_path = tmp_path / "explore-original-again.gpx"
+    exit_code, repeated = _invoke(
+        "export", "--route-id", route_id, "--confirm", "--output", str(repeated_path)
+    )
+    assert exit_code == 0, repeated
+    assert repeated_path.read_bytes() == data
+
+    trip_date = (datetime.now(UTC) + timedelta(days=14)).date().isoformat()
+    exit_code, closures = _invoke("check-closures", "--route-id", route_id, "--date", trip_date)
+    assert exit_code == 0, closures
+    assessment = closures["data"]["assessment"]
+    assert assessment["status"] in {
+        "known_conflict",
+        "possible_conflict",
+        "no_known_conflict",
+        "coverage_unknown",
+        "check_failed",
+    }
+    assert assessment["source_status"] in {"ok", "partial", "failed", "fixture"}
+    assert assessment["coverage"]
+    assert (
+        assessment["source_freshness"]
+        or assessment["source_errors"]
+        or assessment["unknown_coverage"]
+    ), "closure assessment must expose freshness or explicit uncertainty"
+    # A roadwork-free result must come from sources that were actually checked; it is
+    # still not a guarantee of trail clearance.
+    if assessment["status"] == "no_known_conflict":
+        assert assessment["source_status"] == "ok"
+        assert assessment["unknown_coverage"] is False

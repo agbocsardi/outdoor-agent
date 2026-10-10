@@ -16,7 +16,8 @@ OSM Overpass is a lawful read-only source for mapped route relations under its o
 
 | Provider capability | Recommended initial state | Evidence and boundary |
 |---|---|---|
-| RWGPS `discover_public` | `unsupported` | The official v1 OpenAPI describes `GET /api/v1/routes.json` as a paginated list for the authenticated user, with personal filters. It contains no documented public route-search operation. The web Explore catalog is not a documented API. Do not scrape it or advertise community discovery through `ride-cli`. |
+| RWGPS `discover_public` (documented API) | `unsupported` | The official v1 OpenAPI describes `GET /api/v1/routes.json` as a paginated list for the authenticated user, with personal filters. It contains no documented public route-search operation. Do not advertise community discovery through the documented API or `ride-cli`. |
+| RWGPS public Explore (`ridewithgps_public`) | `degraded` (experimental, user-approved) | Undocumented website endpoint `GET https://ridewithgps.com/explore.json`. Direct-origin GET through the project HTTPClient returned HTTP 200 `application/json` on 2026-10-10T19:28Z; `robots.txt` does not disallow `/explore.json`; the terms page showed no applicable scraping prohibition. It is NOT the documented API and NOT licensed; permission, stability and pagination semantics remain unverified. Opt-in, read-only, unauthenticated; simplified previews are not navigation geometry. See the 2026-10-10 revision below. |
 | RWGPS `get_metadata` | `restricted` | `GET /api/v1/routes/{id}.json` is documented, requires API key/auth token, and returns 403 when a route is not visible to the user. An unauthenticated request returned 401. Authenticated public-route retrieval was not probed. |
 | RWGPS `download_gpx` | `restricted` | `GET /api/v1/routes/{id}.{format}` documents GPX output and says visibility rules match route JSON: non-public routes need a privacy code unless owned by the authenticated user. API key/auth token are parameters. No authenticated or entitlement probe was made. Do not infer other-user export permission. |
 | RWGPS `pin_route` | `unverified` | The API docs expose reading the authenticated user's pinned collection and describe “added” sync events when a user pins another user's route, but the reviewed OpenAPI has no documented pin-write operation. Official help describes UI pin/send. A write probe was intentionally not made. |
@@ -136,3 +137,41 @@ contracts and validates offline success/schema/auth/permission failures. An actu
 credentialed read, export entitlement, public catalog search and account write have
 not been verified. Google Nearby Search is likewise contract-tested with explicit
 opt-in and a hard actual-send quota, without a paid live request.
+
+## Revision — 2026-10-10: user-approved experimental public Explore read
+
+Gergő explicitly approved implementing the smallest experimental, read-only public
+community discovery path after the 2026-10-10 investigation. This supersedes the
+earlier Phase 0 decision to leave RWGPS `discover_public` unimplemented; the earlier
+audit text above is retained as history.
+
+Direct-origin evidence (project HTTPClient, no Jina/proxy, no credentials, cookies or
+VPN):
+
+- `GET https://ridewithgps.com/explore.json` returned HTTP 200 `application/json` on
+  2026-10-10T19:28Z. The response echoed an EXPANDED bounding box
+  (`meta.explore.bounding_box_extended=true`), so exact local radius/start filtering is
+  required.
+- `https://ridewithgps.com/robots.txt` (last-modified 2026-10-09) does not disallow
+  `/explore.json`; it disallows `/*.gpx*`, `/*.tcx*`, `/*.kml`, `/*.csv` and
+  `/routes/*.json`.
+- `https://ridewithgps.com/terms` showed no applicable scraping/automation prohibition
+  in the reviewed text. This is not a legal determination.
+- Verified plural selectors `activity_types`, `track_types`, `surfaces`, `models` and
+  meter `length_min`/`length_max`; guessed singulars are ignored. The live server
+  returns a RELATIVE `meta.explore.next_page_url` carrying
+  `offset`/`next_assets`/`sort_by`.
+
+Implementation (`ridewithgps_public`): opt-in explicit provider selection, read-only
+unauthenticated `HTTPClient`, bounded requests/pages/records/bytes/wall-time, validated
+same-origin relative/absolute next pointers with cycle protection and loud truncation,
+exact local activity/distance/loop/radius filtering before the result cap, and honest
+`degraded`/experimental warnings. Routes keep the canonical `ridewithgps:<id>` id and
+`provider="ridewithgps"` so the authenticated documented detail/export path and
+deduplication resolve; `auth_required=false` applies to search only. The Explore
+`simplified_polyline` is never used as navigation-complete geometry, and closure
+assessment never consumes it.
+
+This remains an undocumented, unlicensed, experimental path. Direct-origin behavior,
+permission and pagination semantics are not guaranteed and may change or be denied at
+any time.

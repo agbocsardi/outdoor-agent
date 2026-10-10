@@ -660,6 +660,8 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
             returned=min(len(ranked), criteria.limit),
             provider_truncated=provider_truncated,
         ),
-        warnings=warnings,
+        # Deduplicate identical per-route warnings (for example the Explore geometry
+        # caveat repeated across candidates) while preserving first-seen order.
+        warnings=list(dict.fromkeys(warnings)),
         partial=bool(warnings) or any(status.status != "ok" for status in statuses),
     )

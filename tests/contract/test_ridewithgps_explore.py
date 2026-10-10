@@ -230,6 +230,29 @@ async def test_pagination_follows_same_origin_next_pointer(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_pagination_follows_relative_cursor_pointer(tmp_path: Path) -> None:
+    # Live endpoint shape: a relative /explore.json pointer with offset/next_assets/sort_by.
+    pointer = (
+        "/explore.json?activity_types=cycling%3Agravel&bounding_box=52.0%2C5.0%2C52.2%2C5.2"
+        "&length_max=35000&length_min=20000&models=routes"
+        "&next_assets=Route-2&offset=30&sort_by&track_types=loop"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if dict(request.url.params).get("offset") == "30":
+            return httpx.Response(200, json=page([item(2)]))
+        return httpx.Response(200, json=page([item(1)], pointer))
+
+    criteria = ProviderSearchCriteria(
+        bbox=BBOX, activity=Activity.hiking, center=(5.0, 52.0), radius_km=25, limit=10
+    )
+    result, requests = await run(config(tmp_path), handler, criteria)
+    assert [route.id for route in result.routes] == ["ridewithgps:1", "ridewithgps:2"]
+    assert len(requests) == 2
+    assert requests[1].url.host == "ridewithgps.com"
+
+
+@pytest.mark.asyncio
 async def test_pagination_cycle_is_bounded_and_warns(tmp_path: Path) -> None:
     page_two = "https://ridewithgps.com/explore.json?models=routes&page=2"
 

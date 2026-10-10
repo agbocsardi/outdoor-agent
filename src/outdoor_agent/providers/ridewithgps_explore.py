@@ -85,9 +85,29 @@ _ALLOWED_NEXT_PARAMS = frozenset(
         "surfaces",
         "length_min",
         "length_max",
+        "elevation_min",
+        "elevation_max",
+        "moving_time_min",
+        "moving_time_max",
+        "avg_speed_min",
+        "avg_speed_max",
+        "avg_watts_min",
+        "avg_watts_max",
+        "created_at_min",
+        "created_at_max",
+        "updated_at_min",
+        "updated_at_max",
+        "departed_at_min",
+        "departed_at_max",
+        "q",
+        "user_id",
+        "club_id",
+        # Observed server-supplied cursor/offset fields on a live next_page_url.
+        "next_assets",
+        "offset",
+        "sort_by",
         "page",
         "page_size",
-        "offset",
         "per_page",
         "limit",
     }
@@ -166,11 +186,17 @@ def _explore_page(content: bytes) -> tuple[list[dict[str, Any]], str | None]:
 
 
 def _validated_next_url(value: str) -> str:
-    """Accept only a same-origin Explore pointer with allow-listed query parameters."""
-    if not isinstance(value, str) or len(value) > 2048:
+    """Accept only a same-origin Explore pointer with allow-listed query parameters.
+
+    The live endpoint returns a RELATIVE pointer such as
+    ``/explore.json?offset=30&next_assets=...``; a relative path is same-origin and
+    is resolved against the Explore host. Absolute same-origin URLs are accepted too.
+    """
+    if not isinstance(value, str) or not value or len(value) > 4096:
         raise _schema_error("Pagination pointer is not a bounded string.")
+    candidate = f"https://ridewithgps.com{value}" if value.startswith("/") else value
     try:
-        parsed = urlsplit(value)
+        parsed = urlsplit(candidate)
     except ValueError as exc:
         raise _schema_error("Pagination pointer is malformed.") from exc
     if (
@@ -187,7 +213,7 @@ def _validated_next_url(value: str) -> str:
     params = parse_qs(parsed.query, keep_blank_values=True)
     if set(params) - _ALLOWED_NEXT_PARAMS:
         raise _schema_error("Pagination pointer carries disallowed query parameters.")
-    return value
+    return candidate
 
 
 def _schema_error(message: str) -> OutdoorError:

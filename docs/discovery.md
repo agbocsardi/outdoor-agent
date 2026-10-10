@@ -72,6 +72,34 @@ https://ridewithgps.com/routes/12345` saves metadata and geometry to the RouteSt
 `search --provider local` can find the saved record, and `export --confirm` writes the
 original provider GPX bytes from the same cached artifact with a matching SHA-256.
 
+## Experimental public Ride with GPS Explore search
+
+`search --provider ridewithgps_public` is an opt-in, read-only public community search
+over the undocumented Ride with GPS website Explore endpoint
+(`GET https://ridewithgps.com/explore.json`). It is not the documented API and is not
+licensed; permission, stability and pagination semantics are unverified, so it is
+declared `degraded` and every result carries an experimental warning. It uses no
+credentials, cookies or `ride` CLI; `auth_required=false` applies to search only.
+
+The adapter sends the verified plural selectors (`activity_types`, `track_types`,
+`models`) and meter `length_min`/`length_max`, and never the ignored singulars. Because
+the endpoint expands the requested bounding box, user activity, distance, loop and
+start-radius filters are applied locally before the result cap. Pagination follows only
+a validated same-origin `/explore.json` `next_page_url` (the live pointer is relative
+and carries `offset`/`next_assets`/`sort_by`), with cycle protection and hard
+page/record/byte/wall-time bounds; reaching a bound or an invalid pointer is loud, never
+a silent complete.
+
+Explore results retain the source URL, author attribution, community provenance and
+`unpaved_pct`, but carry only a `simplified_polyline`. That preview is never treated as
+navigation-complete geometry: `geometry` stays null and closure assessment is not
+derived from it. Real geometry, permitted original-byte GPX export and closure checks
+go through the existing authenticated documented API, which keeps the canonical
+`ridewithgps:<id>` id and `provider="ridewithgps"` so detail/export and deduplication
+resolve. A dated live acceptance verifies a real 20-35 km gravel loop within 20 km of
+Den Bosch through this path; RWGPS activity/surface labels remain imperfect suitability
+evidence, not a ride-ready recommendation.
+
 ## Query and geometry handling
 
 Search converts the requested radius into a WGS84 bounding box using geodesic

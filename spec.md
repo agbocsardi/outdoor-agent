@@ -755,13 +755,18 @@ adapter; configured key/token credentials remain an explicit alternative. `get`,
 `export` and `deliver` accept a public route URL
 (`https://ridewithgps.com/routes/<id>`), and `search --provider ridewithgps` lists
 only the authenticated account's own saved routes, with pagination, hard page/record
-bounds and a typed `RIDEWITHGPS_NO_SAVED_ROUTES` empty result. Public community
-discovery remains unavailable and `discover_public` stays `unsupported`; explicit
-public route URLs and local GPX imports are the supported seeds. A read-only probe of
-the current account on 2026-10-10 returned an empty saved-route list, so discovery
-could not supply a 20-35 km gravel loop near Den Bosch and that limitation is reported
-plainly rather than implied. A byte-exact original GPX export was verified against
-the direct provider download, and an opt-in live acceptance test covers authentication,
-known-route fetch, byte-exact idempotent export, honest saved discovery and a dated
-typed closure assessment without account writes. The offline suite passes 358 tests
-with the two opt-in live tests skipped.
+bounds and a typed `RIDEWITHGPS_NO_SAVED_ROUTES` empty result. The documented-API
+`ridewithgps` provider keeps `discover_public=unsupported`, but a separate opt-in
+`ridewithgps_public` provider adds an experimental, undocumented public Explore search
+(`GET https://ridewithgps.com/explore.json`, `discover_public=degraded`, no credentials,
+not licensed). It retains source URL, author, community provenance and unpaved
+percentage; the Explore simplified polyline is never treated as navigation-complete
+geometry, and detail/export still use the authenticated documented API via the `ride`
+CLI. Explicit public route URLs and local GPX imports remain supported seeds. A
+read-only probe of the current account on 2026-10-10 returned an empty saved-route
+list, but the experimental public search found real 20-35 km gravel loops within 20 km
+of Den Bosch; the opt-in live acceptance verified one through permitted detail,
+byte-exact original GPX export and a dated closure assessment, with explicit
+suitability, geometry and closure uncertainty rather than a ride-ready
+recommendation. The offline suite passes 398 tests with the three opt-in live tests
+skipped.
