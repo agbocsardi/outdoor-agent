@@ -156,17 +156,20 @@ class RideCLI:
             raise _auth_required() from exc
         stdout = bytearray()
         stderr = bytearray()
-        overflow = False
+        overflow: str | None = None
 
         async def drain(
-            stream: "asyncio.StreamReader | None", buffer: bytearray, limit: int
+            stream: "asyncio.StreamReader | None",
+            buffer: bytearray,
+            limit: int,
+            stream_name: str,
         ) -> None:
             nonlocal overflow
             assert stream is not None
             while chunk := await stream.read(_CHUNK):
                 buffer.extend(chunk)
                 if len(buffer) > limit:
-                    overflow = True
+                    overflow = stream_name
                     if process.returncode is None:
                         try:
                             process.kill()
@@ -175,8 +178,8 @@ class RideCLI:
                     return
 
         readers = [
-            asyncio.create_task(drain(process.stdout, stdout, max_bytes)),
-            asyncio.create_task(drain(process.stderr, stderr, _STDERR_LIMIT)),
+            asyncio.create_task(drain(process.stdout, stdout, max_bytes, "stdout")),
+            asyncio.create_task(drain(process.stderr, stderr, _STDERR_LIMIT, "stderr")),
         ]
         try:
             async with asyncio.timeout(self.settings.http_timeout_seconds):
@@ -197,7 +200,14 @@ class RideCLI:
             await asyncio.gather(*readers, return_exceptions=True)
             if process.returncode is None:
                 await _terminate(process)
-        if overflow:
+        if overflow == "stderr":
+            raise OutdoorError(
+                "PROVIDER_DIAGNOSTIC_TOO_LARGE",
+                "Ride CLI diagnostic output exceeded the configured limit.",
+                4,
+                provider="ridewithgps",
+            )
+        if overflow == "stdout":
             raise OutdoorError(
                 "PROVIDER_PAYLOAD_TOO_LARGE",
                 "Ride CLI response exceeds the configured payload limit.",

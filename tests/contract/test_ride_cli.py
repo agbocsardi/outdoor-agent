@@ -46,6 +46,10 @@ if stdout_file:
     with open(stdout_file, "rb") as handle:
         sys.stdout.buffer.write(handle.read())
 
+stderr_size = os.environ.get("FAKE_RIDE_STDERR_BYTES")
+if stderr_size:
+    sys.stderr.buffer.write(b"d" * int(stderr_size))
+
 stderr = os.environ.get("FAKE_RIDE_STDERR")
 if stderr:
     sys.stderr.buffer.write(stderr.encode("utf-8"))
@@ -192,6 +196,25 @@ async def test_output_overflow_is_bounded(
         await RideCLI(cli_settings(tmp_path, script)).fetch("/api/v1/routes/42.json", max_bytes=64)
     assert error.value.code == "PROVIDER_PAYLOAD_TOO_LARGE"
     assert error.value.exit_code == 4
+    assert error.value.provider == "ridewithgps"
+
+
+async def test_diagnostic_overflow_is_distinct_and_redacted(
+    fake_ride: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script, _ = fake_ride
+    monkeypatch.setenv("FAKE_RIDE_STDOUT", '{"ok": true}')
+    monkeypatch.setenv("FAKE_RIDE_STDERR_BYTES", str(64 * 1024 + 1))
+    monkeypatch.setenv("FAKE_RIDE_STDERR", "SECRET_SENTINEL")
+    with pytest.raises(OutdoorError) as error:
+        await RideCLI(cli_settings(tmp_path, script)).fetch(
+            "/api/v1/routes/42.json", max_bytes=1024
+        )
+    assert error.value.code == "PROVIDER_DIAGNOSTIC_TOO_LARGE"
+    assert error.value.exit_code == 4
+    assert error.value.provider == "ridewithgps"
+    assert "d" * 128 not in str(error.value)
+    assert "SECRET_SENTINEL" not in error.value.message
 
 
 @pytest.mark.parametrize(
