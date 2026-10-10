@@ -21,8 +21,12 @@ from outdoor_agent.providers.http import HTTPClient
 from outdoor_agent.providers.local import PROVENANCE_WARNING, LocalCatalogProvider
 from outdoor_agent.providers.ndw import FeedFetchResult, fetch_feeds, parse_fixture
 from outdoor_agent.providers.osm import OSMDiscoveryAdapter, OSMProvider
-from outdoor_agent.providers.registry import Provider, registry
+from outdoor_agent.providers.registry import Capability, Provider, registry
 from outdoor_agent.providers.ridewithgps import RideWithGPS, RideWithGPSDiscoveryAdapter
+from outdoor_agent.providers.ridewithgps_explore import (
+    RideWithGPSExplore,
+    RideWithGPSExploreAdapter,
+)
 from outdoor_agent.services.ranking import SourceProvenance, deduplicate_routes, rank_routes
 from outdoor_agent.services.validation import assess_route
 
@@ -36,15 +40,39 @@ DISCOVERY_ADAPTER_FACTORIES: dict[str, DiscoveryAdapterFactory] = {
     "ridewithgps": lambda settings, http, source_type: RideWithGPSDiscoveryAdapter(
         RideWithGPS(settings, http)
     ),
+    "ridewithgps_public": lambda settings, http, source_type: RideWithGPSExploreAdapter(
+        RideWithGPSExplore(settings, http)
+    ),
 }
+
+# Providers that can produce community routes: the local saved catalog and the
+# experimental public Explore adapter. Authenticated saved routes are the user's
+# own account and are deliberately not treated as a public community catalog.
+_COMMUNITY_PROVIDERS = frozenset({"local", "ridewithgps_public"})
+_SELECTABLE_STATES = frozenset({"supported", "degraded"})
 
 
 def _supported_discovery_capability(declaration: Provider) -> str | None:
-    """Return the strongest supported discovery capability name, if any."""
+    """Return the strongest selectable discovery capability name, if any.
+
+    ``degraded`` stays selectable so an experimental provider can be used, but the
+    caller is expected to surface its notes as an explicit warning.
+    """
     for name in ("discover_public", "discover_saved"):
         capability = declaration.capabilities.get(name)
-        if capability is not None and capability.state.value == "supported":
+        if capability is not None and capability.state.value in _SELECTABLE_STATES:
             return name
+    return None
+
+
+def _community_discovery_capability(declaration: Provider) -> Capability | None:
+    """Return the capability that lets a provider yield community routes, if any."""
+    if declaration.provider not in _COMMUNITY_PROVIDERS:
+        return None
+    name = "discover_saved" if declaration.provider == "local" else "discover_public"
+    capability = declaration.capabilities.get(name)
+    if capability is not None and capability.state.value in _SELECTABLE_STATES:
+        return capability
     return None
 
 
@@ -232,20 +260,23 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
             ],
         )
     declared = {item.provider: item for item in registry()}
-    if criteria.source_type == "community" and (
-        "local" not in criteria.providers
-        or "local" in settings.disabled_providers
-        or "local" not in declared
-        or declared["local"].capabilities.get("discover_saved") is None
-        or declared["local"].capabilities["discover_saved"].state.value != "supported"
-    ):
+    community_capable = [
+        name
+        for name in criteria.providers
+        if name in DISCOVERY_ADAPTER_FACTORIES
+        and name not in settings.disabled_providers
+        and name in declared
+        and _community_discovery_capability(declared[name]) is not None
+    ]
+    if criteria.source_type == "community" and not community_capable:
         raise OutdoorError(
             "COMMUNITY_DISCOVERY_UNAVAILABLE",
-            "No public community catalog is configured. Select the local saved catalog and import an entitled GPX with community attribution.",
+            "No public community catalog is selected. Select the local saved catalog or the experimental ridewithgps_public provider.",
             5,
             provider="discovery",
             suggestions=[
-                "Use --provider local and import an entitled GPX with --source-type community --attribution."
+                "Import an entitled GPX with community attribution and use --provider local.",
+                "Or use the experimental --provider ridewithgps_public for undocumented public community discovery.",
             ],
         )
     available = [
@@ -293,8 +324,9 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
     provider_candidates = 0
     source_type_excluded = 0
     provider_truncated = False
+    community_public_returned = False
     for provider_name in criteria.providers:
-        if criteria.source_type == "community" and provider_name != "local":
+        if criteria.source_type == "community" and provider_name not in _COMMUNITY_PROVIDERS:
             continue
         factory = DISCOVERY_ADAPTER_FACTORIES.get(provider_name)
         if factory is None:
@@ -331,6 +363,12 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
                         )
                     )
                     continue
+                capability = adapter.declaration.capabilities[capability_name]
+                if capability.state.value == "degraded":
+                    warnings.append(
+                        f"{provider_name} discovery is experimental and degraded: "
+                        f"{capability.notes}"
+                    )
                 saved_scope_warning = (
                     f"{provider_name} saved-route discovery is scoped to your authenticated "
                     "account; results are your own saved routes, not a public community catalog."
@@ -338,7 +376,17 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
                     else None
                 )
                 provider_result = await adapter.search(
-                    ProviderSearchCriteria(bbox=bounds, activity=criteria.activity, limit=200)
+                    ProviderSearchCriteria(
+                        bbox=bounds,
+                        activity=criteria.activity,
+                        limit=200,
+                        center=center,
+                        radius_km=criteria.radius_km,
+                        distance_min_m=criteria.distance_min_m,
+                        distance_max_m=criteria.distance_max_m,
+                        loop=criteria.loop,
+                        shape=criteria.shape,
+                    )
                 )
             query_succeeded = True
             if saved_scope_warning is not None:
@@ -351,6 +399,12 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
                 or route.source_type.value == criteria.source_type
             ]
             source_type_excluded += len(provider_result.routes) - len(provider_routes)
+            if (
+                provider_name in _COMMUNITY_PROVIDERS
+                and capability_name == "discover_public"
+                and provider_routes
+            ):
+                community_public_returned = True
             routes.extend(provider_routes)
             stale = provider_result.stale
             cached = provider_result.cached
@@ -415,7 +469,11 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
             retryable=True,
             suggestions=["Retry later or select another configured discovery provider."],
         )
-    if criteria.source_type == "all" and "osm" in criteria.providers:
+    if (
+        criteria.source_type == "all"
+        and "osm" in criteria.providers
+        and not community_public_returned
+    ):
         warnings.append(
             "No verified public community-route catalog is configured; public results are mapped OSM official trails. Any saved community provenance is user-supplied."
         )

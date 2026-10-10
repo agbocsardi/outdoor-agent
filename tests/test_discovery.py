@@ -612,3 +612,135 @@ async def test_dated_search_skips_feed_fetch_when_no_candidates_pass_filters(mon
     )
     assert result.routes == []
     assert counts["fetch"] == 0
+
+
+def _explore_item(route_id: int = 1, **overrides) -> dict:
+    base = {
+        "type": "route",
+        "id": route_id,
+        "url": f"/routes/{route_id}",
+        "user_id": 17,
+        "byline_name": "Ada Rider",
+        "name": f"Explore route {route_id}",
+        "description": "Public community route",
+        "distance": 2000,
+        "elevation_gain": 30,
+        "first_lat": 52.0,
+        "first_lng": 5.0,
+        "simplified_polyline": "encoded",
+        "track_type": "loop",
+        "surface": "gravel",
+        "unpaved_pct": 42,
+        "activity_types": ["walking:hiking"],
+        "likes_count": 5,
+        "reviews_count": 2,
+        "created_at": "2026-01-02T03:04:05Z",
+        "updated_at": "2026-02-03T04:05:06Z",
+        "locality": "Utrecht",
+        "country_code": "NL",
+    }
+    base.update(overrides)
+    return base
+
+
+def _explore_page(results: list[dict], next_page: str | None = None) -> dict:
+    return {
+        "results": results,
+        "total_count": len(results),
+        "meta": {"explore": {"next_page_url": next_page, "bounding_box_extended": True}},
+    }
+
+
+def _mock_discovery_http(monkeypatch, handler) -> None:
+    from outdoor_agent.services import discovery
+
+    original = discovery.HTTPClient
+
+    class MockClient(original):
+        def __init__(self, config: object) -> None:
+            super().__init__(config, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(discovery, "HTTPClient", MockClient)
+
+
+@pytest.mark.asyncio
+async def test_ridewithgps_public_community_search_executes_explore(monkeypatch, tmp_path) -> None:
+    from outdoor_agent.config import Settings
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        assert request.url.path == "/explore.json"
+        return httpx.Response(200, json=_explore_page([_explore_item(1)]))
+
+    _mock_discovery_http(monkeypatch, handler)
+    settings = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
+    result = await search_routes(
+        settings,
+        SearchCriteria(
+            center=(5.0, 52.0),
+            source_type="community",
+            providers=["ridewithgps_public"],
+            radius_km=20,
+        ),
+    )
+    assert calls == ["/explore.json"]
+    assert [item.route.id for item in result.routes] == ["ridewithgps:1"]
+    assert result.routes[0].route.source_type == SourceType.community
+    assert result.routes[0].route.provider == "ridewithgps_public"
+    assert result.provider_status[0].provider == "ridewithgps_public"
+    assert any("experimental and degraded" in warning for warning in result.warnings)
+    assert any("undocumented website endpoint" in warning for warning in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_public_community_warning_suppressed_when_explore_returns_results(
+    monkeypatch, tmp_path
+) -> None:
+    from outdoor_agent.config import Settings
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/explore.json":
+            return httpx.Response(200, json=_explore_page([_explore_item(1)]))
+        return httpx.Response(200, json={"elements": []})
+
+    _mock_discovery_http(monkeypatch, handler)
+    settings = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
+    result = await search_routes(
+        settings,
+        SearchCriteria(
+            center=(5.0, 52.0),
+            source_type="all",
+            providers=["osm", "ridewithgps_public"],
+            radius_km=20,
+        ),
+    )
+    assert [item.route.id for item in result.routes] == ["ridewithgps:1"]
+    assert not any(
+        "No verified public community-route catalog" in warning for warning in result.warnings
+    )
+
+
+@pytest.mark.asyncio
+async def test_osm_is_not_run_under_community_source_type(monkeypatch, tmp_path) -> None:
+    from outdoor_agent.config import Settings
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/explore.json":
+            return httpx.Response(200, json=_explore_page([_explore_item(1)]))
+        raise AssertionError("OSM must not run under --source-type community")
+
+    _mock_discovery_http(monkeypatch, handler)
+    settings = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
+    result = await search_routes(
+        settings,
+        SearchCriteria(
+            center=(5.0, 52.0),
+            source_type="community",
+            providers=["osm", "ridewithgps_public"],
+            radius_km=20,
+        ),
+    )
+    assert [item.route.id for item in result.routes] == ["ridewithgps:1"]
+    assert all(status.provider != "osm" for status in result.provider_status)

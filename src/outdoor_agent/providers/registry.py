@@ -36,6 +36,7 @@ class Provider(Model):
 
 CHECKED = datetime.fromisoformat("2026-10-09T14:51:49+00:00")
 CHECKED_SAVED_ROUTES = datetime.fromisoformat("2026-10-10T05:41:30+00:00")
+CHECKED_EXPLORE = datetime.fromisoformat("2026-10-10T19:28:00+00:00")
 
 
 def capability(
@@ -108,6 +109,31 @@ def registry() -> list[Provider]:
                     "unverified",
                     "No authenticated supported write tested.",
                     "https://support.ridewithgps.com/hc/en-us/articles/27231998487963-COROS",
+                ),
+            },
+        ),
+        Provider(
+            provider="ridewithgps_public",
+            implemented=True,
+            auth_required=False,
+            activities=[
+                Activity.road,
+                Activity.gravel,
+                Activity.mtb,
+                Activity.hiking,
+                Activity.walking,
+                Activity.running,
+                Activity.trail_running,
+            ],
+            coverage="Undocumented public Explore route search; community routes where the website indexes them. Completeness and geographic coverage are unknown.",
+            notes="EXPERIMENTAL and UNDOCUMENTED: reads the ridewithgps.com website Explore endpoint, not the documented API. No credentials, cookies or ride CLI. Direct-origin GET of https://ridewithgps.com/explore.json returned HTTP 200 application/json on 2026-10-10T19:28Z and robots.txt does not disallow it. Permission, stability and pagination semantics are unverified; results carry simplified polylines and are not navigation-complete.",
+            capabilities={
+                "discover_public": capability(
+                    "degraded",
+                    "Undocumented website endpoint, not the documented API, and no credentials were used. Permission and stability are unverified; multi-page semantics are unverified. Direct-origin GET returned HTTP 200 application/json on 2026-10-10T19:28Z and robots.txt does not disallow /explore.json.",
+                    "https://ridewithgps.com/explore.json",
+                    "https://ridewithgps.com/robots.txt",
+                    checked_at=CHECKED_EXPLORE,
                 ),
             },
         ),

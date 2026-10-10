@@ -460,3 +460,69 @@ def test_recheck_detects_unsampled_coverage_changes_but_not_refresh_timestamps(
     assert changed["data"]["comparison"]["changed"] is True
     assert changed["data"]["assessment"]["findings"] == []
     assert changed["data"]["assessment"]["unknown_coverage"] is True
+
+
+def test_search_ridewithgps_public_community_executes_explore_cli(monkeypatch) -> None:
+    """The experimental public provider runs end-to-end from the CLI, offline-mocked."""
+    import httpx
+
+    from outdoor_agent.services import discovery
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/explore.json"
+        assert dict(request.url.params)["models"] == "routes"
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "type": "route",
+                        "id": 4242,
+                        "url": "/routes/4242",
+                        "byline_name": "Ada Rider",
+                        "name": "Explore community loop",
+                        "distance": 2000,
+                        "first_lat": 52.0,
+                        "first_lng": 5.0,
+                        "simplified_polyline": "encoded",
+                        "track_type": "loop",
+                        "unpaved_pct": 42,
+                        "activity_types": ["walking:hiking"],
+                        "reviews_count": 3,
+                        "likes_count": 7,
+                    }
+                ],
+                "total_count": 1,
+                "meta": {"explore": {"next_page_url": None}},
+            },
+        )
+
+    original = discovery.HTTPClient
+
+    class MockClient(original):
+        def __init__(self, config: object) -> None:
+            super().__init__(config, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(discovery, "HTTPClient", MockClient)
+    payload = call(
+        [
+            "search",
+            "--provider",
+            "ridewithgps_public",
+            "--source-type",
+            "community",
+            "--near",
+            "52.0,5.0",
+            "--activity",
+            "hiking",
+        ]
+    )
+    validate(payload["data"], schemas()["discovery"])
+    assert payload["status"] == "partial"
+    assert any("experimental" in warning for warning in payload["warnings"])
+    route = payload["data"]["routes"][0]["route"]
+    assert route["provider"] == "ridewithgps_public"
+    assert route["source_type"] == "community"
+    assert route["id"] == "ridewithgps:4242"
+    assert route["geometry"] is None
+    assert route["raw_metadata"]["unpaved_pct"] == 42

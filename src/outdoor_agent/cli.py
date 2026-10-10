@@ -443,7 +443,7 @@ def search(
     strict: bool = typer.Option(False, help="Exit 6 for partial coverage after emitting results."),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Discover mapped OSM routes, the local saved catalog, or the authenticated account's own Ride with GPS saved routes."""
+    """Discover mapped OSM routes, the local saved catalog, the authenticated account's own Ride with GPS saved routes, or the experimental undocumented Ride with GPS public Explore catalog (--provider ridewithgps_public)."""
     config = settings(ctx)
     low, high = parse_distance(distance_km)
     bounds = None

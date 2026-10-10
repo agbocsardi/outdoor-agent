@@ -1,10 +1,10 @@
 """Typed adapter boundaries; provider I/O stays outside deterministic scoring."""
 
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import Field
 
-from outdoor_agent.models.routes import Activity, Geometry, GPXArtifact, Model, Route
+from outdoor_agent.models.routes import Activity, Coordinate, Geometry, GPXArtifact, Model, Route
 from outdoor_agent.providers.ndw import FeedFetchResult
 from outdoor_agent.providers.registry import Provider
 
@@ -13,6 +13,14 @@ class SearchCriteria(Model):
     activity: Activity
     bbox: tuple[float, float, float, float]
     limit: int = Field(default=10, ge=1, le=200)
+    # Optional user filters; adapters that cannot honour them must ignore them rather
+    # than silently widening the request. OSM and local adapters only use bbox/activity.
+    center: Coordinate | None = None
+    radius_km: float | None = Field(default=None, gt=0, le=100)
+    distance_min_m: float | None = Field(default=None, ge=0)
+    distance_max_m: float | None = Field(default=None, ge=0)
+    loop: Literal["preferred", "required", "any"] = "any"
+    shape: Literal["any", "loop", "point_to_point"] = "any"
 
 
 class SearchResult(Model):
