@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, cast
-
-from shapely.geometry import LineString, Point, box
+from typing import TYPE_CHECKING, Literal
 
 from outdoor_agent.errors import OutdoorError
-from outdoor_agent.models.routes import Activity, Coordinate, Route, SourceType
+from outdoor_agent.geo.geometry import within_bbox
+from outdoor_agent.models.routes import Activity, SourceType
 from outdoor_agent.providers.base import SearchCriteria, SearchResult
 from outdoor_agent.providers.osm import activity_matches
 from outdoor_agent.providers.registry import Provider, registry
@@ -50,7 +49,7 @@ class LocalCatalogProvider:
             route
             for route in typed_records
             if _activity_compatible(criteria.activity, route.activity)
-            and _within_bbox(route, bounds)
+            and within_bbox(route, bounds)
         ]
         warnings = []
         if len(selected) > criteria.limit:
@@ -89,25 +88,3 @@ def _activity_compatible(requested: Activity, actual: Activity) -> bool:
     }:
         return True
     return activity_matches(requested, actual)
-
-
-def _within_bbox(route: Route, bounds: tuple[float, float, float, float]) -> bool:
-    south, west, north, east = bounds
-    extent = box(west, south, east, north)
-    if route.geometry is None:
-        if route.start_lon is None or route.start_lat is None:
-            return False
-        return extent.covers(Point(route.start_lon, route.start_lat))
-    if route.geometry.type == "LineString":
-        lines = [cast(list[Coordinate], route.geometry.coordinates)]
-    else:
-        lines = cast(list[list[Coordinate]], route.geometry.coordinates)
-    for points in lines:
-        line = LineString(points)
-        if line.intersects(extent):
-            return True
-    return bool(
-        route.start_lon is not None
-        and route.start_lat is not None
-        and extent.covers(Point(route.start_lon, route.start_lat))
-    )

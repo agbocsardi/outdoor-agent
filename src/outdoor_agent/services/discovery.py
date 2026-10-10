@@ -21,7 +21,8 @@ from outdoor_agent.providers.http import HTTPClient
 from outdoor_agent.providers.local import PROVENANCE_WARNING, LocalCatalogProvider
 from outdoor_agent.providers.ndw import FeedFetchResult, fetch_feeds, parse_fixture
 from outdoor_agent.providers.osm import OSMDiscoveryAdapter, OSMProvider
-from outdoor_agent.providers.registry import registry
+from outdoor_agent.providers.registry import Provider, registry
+from outdoor_agent.providers.ridewithgps import RideWithGPS, RideWithGPSDiscoveryAdapter
 from outdoor_agent.services.ranking import SourceProvenance, deduplicate_routes, rank_routes
 from outdoor_agent.services.validation import assess_route
 
@@ -32,7 +33,19 @@ DISCOVERY_ADAPTER_FACTORIES: dict[str, DiscoveryAdapterFactory] = {
     "local": lambda settings, http, source_type: LocalCatalogProvider(
         settings, source_type=source_type
     ),
+    "ridewithgps": lambda settings, http, source_type: RideWithGPSDiscoveryAdapter(
+        RideWithGPS(settings, http)
+    ),
 }
+
+
+def _supported_discovery_capability(declaration: Provider) -> str | None:
+    """Return the strongest supported discovery capability name, if any."""
+    for name in ("discover_public", "discover_saved"):
+        capability = declaration.capabilities.get(name)
+        if capability is not None and capability.state.value == "supported":
+            return name
+    return None
 
 
 class SearchCriteria(Model):
@@ -241,14 +254,7 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
         if name in DISCOVERY_ADAPTER_FACTORIES
         and name not in settings.disabled_providers
         and name in declared
-        and declared[name].capabilities.get(
-            "discover_saved" if name == "local" else "discover_public"
-        )
-        is not None
-        and declared[name]
-        .capabilities["discover_saved" if name == "local" else "discover_public"]
-        .state.value
-        == "supported"
+        and _supported_discovery_capability(declared[name]) is not None
     ]
     if not available:
         if criteria.source_type == "community":
@@ -315,13 +321,8 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
         try:
             async with HTTPClient(settings) as http:
                 adapter = factory(settings, http, criteria.source_type)
-                capability_name = (
-                    "discover_saved" if provider_name == "local" else "discover_public"
-                )
-                if (
-                    adapter.declaration.capabilities.get(capability_name) is None
-                    or adapter.declaration.capabilities[capability_name].state.value != "supported"
-                ):
+                capability_name = _supported_discovery_capability(adapter.declaration)
+                if capability_name is None:
                     statuses.append(
                         DiscoveryProviderStatus(
                             provider=provider_name,
@@ -330,10 +331,18 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
                         )
                     )
                     continue
+                saved_scope_warning = (
+                    f"{provider_name} saved-route discovery is scoped to your authenticated "
+                    "account; results are your own saved routes, not a public community catalog."
+                    if capability_name == "discover_saved" and adapter.declaration.auth_required
+                    else None
+                )
                 provider_result = await adapter.search(
                     ProviderSearchCriteria(bbox=bounds, activity=criteria.activity, limit=200)
                 )
             query_succeeded = True
+            if saved_scope_warning is not None:
+                warnings.append(saved_scope_warning)
             provider_candidates += len(provider_result.routes)
             provider_routes = [
                 route
@@ -384,11 +393,10 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
             )
             warnings.append(f"{provider_name} route discovery failed: {exc.message}")
     if not query_succeeded:
-        local_empty = next(
-            (error for error in provider_errors if error.code == "LOCAL_CATALOG_EMPTY"), None
-        )
-        if local_empty is not None:
-            raise local_empty
+        for code in ("LOCAL_CATALOG_EMPTY", "RIDEWITHGPS_NO_SAVED_ROUTES"):
+            typed_empty = next((error for error in provider_errors if error.code == code), None)
+            if typed_empty is not None:
+                raise typed_empty
         if all(status.status in {"unsupported", "disabled"} for status in statuses):
             raise OutdoorError(
                 "PROVIDER_UNSUPPORTED",
@@ -407,7 +415,7 @@ async def search_routes(settings: Settings, criteria: SearchCriteria) -> Discove
             retryable=True,
             suggestions=["Retry later or select another configured discovery provider."],
         )
-    if criteria.source_type == "all" and any(name != "local" for name in criteria.providers):
+    if criteria.source_type == "all" and "osm" in criteria.providers:
         warnings.append(
             "No verified public community-route catalog is configured; public results are mapped OSM official trails. Any saved community provenance is user-supplied."
         )

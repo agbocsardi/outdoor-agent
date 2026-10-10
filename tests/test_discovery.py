@@ -10,6 +10,7 @@ from outdoor_agent.models.routes import Activity, Geometry, Metric, Route, Sourc
 from outdoor_agent.providers.base import RouteDiscoveryProvider, SearchResult
 from outdoor_agent.providers.base import SearchCriteria as ProviderSearchCriteria
 from outdoor_agent.providers.osm import OSMDiscoveryAdapter, OSMProvider
+from outdoor_agent.providers.ridewithgps import RideWithGPSDiscoveryAdapter
 from outdoor_agent.services.discovery import (
     RankedRoute,
     RankingExplanation,
@@ -410,9 +411,97 @@ async def test_unsupported_provider_set_fails_with_exit_five() -> None:
     with pytest.raises(OutdoorError) as error:
         await search_routes(
             load_settings(),
-            SearchCriteria(near="Utrecht", providers=["ridewithgps", "wikiloc"]),
+            SearchCriteria(near="Utrecht", providers=["wikiloc", "google"]),
         )
     assert error.value.code == "PROVIDER_UNSUPPORTED"
+    assert error.value.exit_code == 5
+
+
+@pytest.mark.asyncio
+async def test_ridewithgps_saved_discovery_is_selectable_with_scope_warning(
+    monkeypatch, tmp_path
+) -> None:
+    from outdoor_agent.config import Settings
+
+    route = make_route("ridewithgps:1").model_copy(
+        update={"provider": "ridewithgps", "source_type": SourceType.community}
+    )
+
+    async def fake_search(self, criteria: ProviderSearchCriteria) -> SearchResult:
+        return SearchResult(routes=[route], warnings=[])
+
+    monkeypatch.setattr(RideWithGPSDiscoveryAdapter, "search", fake_search)
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        ride_api_key="synthetic-key",
+        ride_auth_token="synthetic-token",
+    )
+    result = await search_routes(
+        settings,
+        SearchCriteria(center=(5.0, 52.0), providers=["ridewithgps"], radius_km=20),
+    )
+    assert [item.route.id for item in result.routes] == ["ridewithgps:1"]
+    assert result.provider_status[0].provider == "ridewithgps"
+    assert result.provider_status[0].status == "ok"
+    assert any("authenticated account" in warning for warning in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_ridewithgps_saved_routes_are_not_folded_into_community_source() -> None:
+    with pytest.raises(OutdoorError) as error:
+        await search_routes(
+            load_settings(),
+            SearchCriteria(
+                center=(5.0, 52.0),
+                source_type="community",
+                providers=["ridewithgps"],
+            ),
+        )
+    assert error.value.code == "COMMUNITY_DISCOVERY_UNAVAILABLE"
+    assert error.value.exit_code == 5
+
+
+@pytest.mark.asyncio
+async def test_empty_ridewithgps_account_propagates_typed_error(monkeypatch, tmp_path) -> None:
+    from outdoor_agent.config import Settings
+    from outdoor_agent.services import discovery
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "routes": [],
+                "meta": {
+                    "pagination": {
+                        "record_count": 0,
+                        "page_count": 0,
+                        "page_size": 20,
+                        "next_page_url": None,
+                    }
+                },
+            },
+        )
+
+    original = discovery.HTTPClient
+
+    class MockClient(original):
+        def __init__(self, config: object) -> None:
+            super().__init__(config, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(discovery, "HTTPClient", MockClient)
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+        ride_api_key="synthetic-key",
+        ride_auth_token="synthetic-token",
+    )
+    with pytest.raises(OutdoorError) as error:
+        await search_routes(
+            settings,
+            SearchCriteria(center=(5.0, 52.0), providers=["ridewithgps"], radius_km=20),
+        )
+    assert error.value.code == "RIDEWITHGPS_NO_SAVED_ROUTES"
     assert error.value.exit_code == 5
 
 

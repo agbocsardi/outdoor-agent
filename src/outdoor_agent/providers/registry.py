@@ -35,12 +35,15 @@ class Provider(Model):
 
 
 CHECKED = datetime.fromisoformat("2026-10-09T14:51:49+00:00")
+CHECKED_SAVED_ROUTES = datetime.fromisoformat("2026-10-10T05:41:30+00:00")
 
 
-def capability(state: str, notes: str, *evidence: str) -> Capability:
+def capability(
+    state: str, notes: str, *evidence: str, checked_at: datetime | None = None
+) -> Capability:
     return Capability(
         state=CapabilityState(state),
-        checked_at=CHECKED if evidence else None,
+        checked_at=(checked_at or CHECKED) if evidence else None,
         evidence=list(evidence),
         notes=notes,
     )
@@ -76,13 +79,20 @@ def registry() -> list[Provider]:
             auth_required=True,
             activities=[],
             coverage="Authenticated account routes; public community discovery not verified.",
-            notes="Documented authenticated reads and authorized GPX export implemented; account credentials not probed in this build. Public community discovery and remote writes remain unavailable.",
+            notes="Documented authenticated reads, saved-route listing and authorized GPX export implemented. A read-only listRoutes probe of the current account on 2026-10-10 returned no saved routes. Public community discovery and remote writes remain unavailable.",
             capabilities={
                 "discover_public": capability(
                     "unsupported",
                     "Documented route list is scoped to the authenticated user, not public search.",
                     "https://ridewithgps.com/api/v1/doc",
                     "https://github.com/ridewithgps/ride-cli",
+                ),
+                "discover_saved": capability(
+                    "supported",
+                    "GET /api/v1/routes.json (listRoutes) returns a paginated list scoped to the authenticated user's own routes, not a public catalog. A read-only probe of the current account on 2026-10-10 returned an empty page (record_count 0, next_page_url null).",
+                    "https://ridewithgps.com/api/v1/doc",
+                    "listRoutes description: 'Returns a paginated list of routes for the authenticated user.'",
+                    checked_at=CHECKED_SAVED_ROUTES,
                 ),
                 "get_metadata": capability(
                     "restricted",

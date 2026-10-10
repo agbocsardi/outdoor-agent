@@ -24,11 +24,52 @@ conservative completeness check. Overpass runtime remarks and relation-limit
 truncation surface as partial-result warnings; an empty result with a runtime
 remark is a typed provider failure.
 
+On 2026-10-10, a single read-only `ride api get /api/v1/routes.json` probe of the
+authenticated account returned an empty page: `record_count` 0, `page_count` 0,
+`page_size` 20 and `next_page_url` null. No token, credential or route content was
+recorded. This is the account's saved-route state on that date, not a claim about
+any other account.
+
 This verifies that these public read endpoints responded to these example
 requests on that date. It does not establish uptime, complete geographic
 coverage, route access conditions, public community search, GPX download rights,
 or a recommendation/popularity signal. Mapped geometry, names, route tags and
 endpoint behavior can change after the probe.
+
+## Authenticated Ride with GPS saved routes
+
+The documented `GET /api/v1/routes.json` (`listRoutes`) endpoint returns a
+paginated list **for the authenticated user**, not a public catalog. Public
+community discovery remains unavailable and `discover_public` stays `unsupported`.
+The supported seeds are an explicit public route URL and a local GPX import.
+
+`search --provider ridewithgps` lists the account's own saved routes. It requests
+`page` and `page_size` (20-200) through the authenticated transport, then follows
+`meta.pagination.next_page_url` by extracting only its page number and re-issuing a
+validated `/api/v1/routes.json` request; an arbitrary URL is never fetched. It stops
+at a null `next_page_url`, an empty page, or the requested limit, and is hard-bounded
+to 20 pages and 500 records. Reaching a bound adds a truncation warning to the
+returned routes. Activity and geographic filters are applied client-side because the
+endpoint has none. A malformed or missing pagination object is a typed
+`PROVIDER_SCHEMA_INVALID` error. An account with zero saved routes returns
+`RIDEWITHGPS_NO_SAVED_ROUTES` (exit 5) with a suggestion to save routes, fetch one
+explicit public route URL, or import a local GPX; it is never an empty success.
+
+Because this source is account-scoped, a selected saved-only provider adds an
+explicit warning that the results are the authenticated user's own saved routes, not
+a public community catalog. `--source-type community` still requires
+`--provider local`; Ride with GPS saved routes are not folded into that gate. The
+routes keep their existing `community` source label and the warning makes the scope
+explicit under `--source-type all`.
+
+A known route can also be addressed by its public URL. `canonical_route_reference`
+accepts `https://ridewithgps.com/routes/<id>` (and the `www.` host) with no query,
+fragment, credentials or port, and maps it to `ridewithgps:<id>`; every other value
+is returned unchanged. `get`, `export` and `deliver` normalize this reference before
+store lookup or provider dispatch, so `get --route-id
+https://ridewithgps.com/routes/12345` saves metadata and geometry to the RouteStore,
+`search --provider local` can find the saved record, and `export --confirm` writes the
+original provider GPX bytes from the same cached artifact with a matching SHA-256.
 
 ## Query and geometry handling
 
@@ -103,6 +144,6 @@ performed by search; unavailable factors remain outside the score denominator.
 
 ## Saved community catalog and geographic criteria
 
-`--provider local --source-type community` searches saved/imported routes with explicit community provenance. It uses the same typed discovery interface and retains original URLs, attribution and unknown metrics. It does not query a public community catalog or establish that someone rode the route. There is no fixture-directory fallback. Empty catalogs return import instructions. Use only GPX files you are entitled to retain.
+`--provider local --source-type community` searches saved/imported routes with explicit community provenance. It uses the same typed discovery interface and retains original URLs, attribution and unknown metrics. It does not query a public community catalog or establish that someone rode the route. There is no fixture-directory fallback. Empty catalogs return import instructions. Use only GPX files you are entitled to retain. Authenticated Ride with GPS saved routes are a separate account-scoped provider and do not satisfy this community gate.
 
 `--bbox SOUTH,WEST,NORTH,EAST` controls the query extent, bounded within 100 km of its midpoint. Without `--near` its midpoint is the start-proximity origin; `--radius-km` still filters starts. `--shape loop` and `--shape point_to_point` require observable geometry evidence for the shape.

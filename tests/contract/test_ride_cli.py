@@ -1,5 +1,6 @@
 """Offline contracts for the authenticated ``ride`` CLI transport (no real login, no network)."""
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -311,6 +312,65 @@ async def test_probe_auth_reports_http_transport(tmp_path: Path) -> None:
     ) as http:
         result = await RideWithGPS(settings, http).probe_auth()
     assert result["transport"] == "http"
+
+
+def test_public_route_url_cli_chain_saves_searches_and_exports_original_bytes(
+    fake_ride: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    example_gpx: Path,
+) -> None:
+    script, _ = fake_ride
+    monkeypatch.setenv("OUTDOOR_AGENT_RIDE_CLI_PATH", str(script))
+    runner = CliRunner()
+    monkeypatch.setenv("FAKE_RIDE_STDOUT", json.dumps(_ROUTE_PAYLOAD))
+    fetched = runner.invoke(
+        app, ["get", "--route-id", "https://ridewithgps.com/routes/42", "--json"]
+    )
+    assert fetched.exit_code == 0, (fetched.output, fetched.exception)
+    assert json.loads(fetched.stdout)["data"]["route"]["id"] == "ridewithgps:42"
+
+    listed = runner.invoke(
+        app,
+        [
+            "search",
+            "--provider",
+            "local",
+            "--source-type",
+            "community",
+            "--bbox",
+            "51.9,4.9,52.1,5.1",
+            "--activity",
+            "gravel",
+            "--json",
+        ],
+    )
+    assert listed.exit_code == 0, (listed.output, listed.exception)
+    payload = json.loads(listed.stdout)
+    assert [entry["route"]["id"] for entry in payload["data"]["routes"]] == ["ridewithgps:42"]
+
+    monkeypatch.delenv("FAKE_RIDE_STDOUT")
+    monkeypatch.setenv("FAKE_RIDE_STDOUT_FILE", str(example_gpx))
+    output = tmp_path / "exported.gpx"
+    exported = runner.invoke(
+        app,
+        [
+            "export",
+            "--confirm",
+            "--route-id",
+            "https://ridewithgps.com/routes/42",
+            "--format",
+            "gpx",
+            "--output",
+            str(output),
+            "--json",
+        ],
+    )
+    assert exported.exit_code == 0, (exported.output, exported.exception)
+    body = json.loads(exported.stdout)["data"]
+    assert body["original_bytes"] is True
+    assert output.read_bytes() == example_gpx.read_bytes()
+    assert body["sha256"] == hashlib.sha256(example_gpx.read_bytes()).hexdigest()
 
 
 def test_doctor_reports_ride_cli_transport_without_credentials(

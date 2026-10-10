@@ -27,7 +27,7 @@ from outdoor_agent.providers.http import HTTPClient
 from outdoor_agent.providers.ndw import FeedFetchResult, fetch_feeds
 from outdoor_agent.providers.registry import Provider, registry
 from outdoor_agent.providers.ride_cli import RideCLI
-from outdoor_agent.providers.ridewithgps import RideWithGPS
+from outdoor_agent.providers.ridewithgps import RideWithGPS, canonical_route_reference
 from outdoor_agent.services.delivery import (
     ExportResult,
     HandoffResult,
@@ -443,7 +443,7 @@ def search(
     strict: bool = typer.Option(False, help="Exit 6 for partial coverage after emitting results."),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Discover real mapped OSM routes; disclose unavailable community catalogs."""
+    """Discover mapped OSM routes, the local saved catalog, or the authenticated account's own Ride with GPS saved routes."""
     config = settings(ctx)
     low, high = parse_distance(distance_km)
     bounds = None
@@ -757,6 +757,7 @@ def export(
     if dry_run and confirm:
         raise OutdoorError("INVALID_ARGUMENTS", "Choose --dry-run or --confirm, not both.")
     config = settings(ctx)
+    route_id = canonical_route_reference(route_id)
     if not confirm:
         route = RouteStore(config.data_dir).get_route(route_id)
         plan = ExportPlan(

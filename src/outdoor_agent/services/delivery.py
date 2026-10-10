@@ -22,7 +22,7 @@ from outdoor_agent.providers.gpx_export import CachedGeometryExporter
 from outdoor_agent.providers.http import HTTPClient
 from outdoor_agent.providers.osm import OSM_GEOMETRY_NORMALIZER_VERSION, OSMProvider
 from outdoor_agent.providers.registry import registry
-from outdoor_agent.providers.ridewithgps import RideWithGPS
+from outdoor_agent.providers.ridewithgps import RideWithGPS, canonical_route_reference
 from outdoor_agent.storage.db import RouteStore
 
 DetailProviderFactory = Callable[[Settings, HTTPClient], RouteDetailProvider]
@@ -54,6 +54,7 @@ def _require_current_osm_geometry(route: Route) -> None:
 
 
 async def load_route(settings: Settings, route_id: str, *, refresh: bool = False) -> Route:
+    route_id = canonical_route_reference(route_id)
     store = RouteStore(settings.data_dir)
     if not refresh:
         try:
@@ -177,6 +178,7 @@ async def prepare_handoff(
     account: str | None = None,
 ) -> HandoffResult:
     """Prepare a reviewable plan; commit only the explicitly confirmed request."""
+    route_id = canonical_route_reference(route_id)
     factories: dict[str, Callable[[], ManualCorosProvider]] = {
         "coros": lambda: ManualCorosProvider(
             settings, export_route, output=output, account=account
