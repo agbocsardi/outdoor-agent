@@ -1,0 +1,61 @@
+[project]
+name = "outdoor-agent"
+version = "0.3.1"
+description = "Local, evidence-aware outdoor route tools for agents"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Gergő Bocsárdi", email = "bocsardi.gergely@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.2,<9",
+    "defusedxml>=0.7.1",
+    "gpxpy>=1.6.2",
+    "httpx>=0.28.1",
+    "pydantic>=2.14.0",
+    "pyproj>=3.8.0",
+    "shapely>=2.2.0",
+    "typer>=0.20,<0.21",
+]
+
+[project.scripts]
+outdoor-agent = "outdoor_agent.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.26.0",
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.10",
+    "types-defusedxml>=0.7.0.20260504",
+    "types-jsonschema>=4.26.0.20261006",
+    "types-shapely>=2.1.0.20260728",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+asyncio_mode = "auto"
+markers = ["live: opt-in public read-only provider integration; disabled unless OUTDOOR_AGENT_LIVE_TESTS=1"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option"]

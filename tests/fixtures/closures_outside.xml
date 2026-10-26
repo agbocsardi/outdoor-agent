@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic fixture: one parallel event within the buffer but not intersecting the route,
+     and one clearly distant event that must not be flagged. -->
+<mc:messageContainer xmlns:mc="http://datex2.eu/schema/3/messageContainer" xmlns:sit="http://datex2.eu/schema/3/situation" xmlns:com="http://datex2.eu/schema/3/common" xmlns:loc="http://datex2.eu/schema/3/locationReferencing" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" modelBaseVersion="3">
+  <mc:payload xsi:type="sit:SituationPublication" modelBaseVersion="3">
+    <com:publicationTime>2026-10-09T10:00:00Z</com:publicationTime>
+    <sit:situation id="outside-near">
+      <sit:situationVersionTime>2026-10-09T09:00:00Z</sit:situationVersionTime>
+      <sit:situationRecord xsi:type="sit:CyclewayClosure" id="parallel-near-record">
+        <sit:validity><com:validityTimeSpecification><com:overallStartTime>2026-10-10T00:00:00Z</com:overallStartTime><com:overallEndTime>2026-10-12T00:00:00Z</com:overallEndTime></com:validityTimeSpecification></sit:validity>
+        <sit:source><com:sourceName><com:values><com:value>Fixture municipality</com:value></com:values></com:sourceName></sit:source>
+        <sit:roadOrCarriagewayOrLaneManagementType>cyclewayClosure</sit:roadOrCarriagewayOrLaneManagementType>
+        <sit:locationReference xsi:type="loc:ItineraryByIndexedLocations"><loc:locationContainedInItinerary><loc:location xsi:type="loc:LinearLocation"><loc:gmlLineString srsName="WGS 84"><loc:posList>52.1000 5.10022 52.1010 5.10022</loc:posList></loc:gmlLineString></loc:location></loc:locationContainedInItinerary></sit:locationReference>
+      </sit:situationRecord>
+    </sit:situation>
+    <sit:situation id="outside-distant">
+      <sit:situationVersionTime>2026-10-09T09:00:00Z</sit:situationVersionTime>
+      <sit:situationRecord xsi:type="sit:CyclewayClosure" id="distant-record">
+        <sit:validity><com:validityTimeSpecification><com:overallStartTime>2026-10-10T00:00:00Z</com:overallStartTime><com:overallEndTime>2026-10-12T00:00:00Z</com:overallEndTime></com:validityTimeSpecification></sit:validity>
+        <sit:source><com:sourceName><com:values><com:value>Fixture municipality</com:value></com:values></com:sourceName></sit:source>
+        <sit:roadOrCarriagewayOrLaneManagementType>cyclewayClosure</sit:roadOrCarriagewayOrLaneManagementType>
+        <sit:locationReference xsi:type="loc:ItineraryByIndexedLocations"><loc:locationContainedInItinerary><loc:location xsi:type="loc:LinearLocation"><loc:gmlLineString srsName="WGS 84"><loc:posList>52.1000 5.2000 52.1010 5.2000</loc:posList></loc:gmlLineString></loc:location></loc:locationContainedInItinerary></sit:locationReference>
+      </sit:situationRecord>
+    </sit:situation>
+  </mc:payload>
+</mc:messageContainer>

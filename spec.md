@@ -711,3 +711,62 @@ A meaningful v1 demo:
 > Always run `uv sync --dev`, `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy src` (and address failures). If repository restrictions prevent a command, explain the blocker.
 >
 > Make small coherent commits / PRs; document what is genuinely implemented, what remains unverified, exact setup commands, and how to test each milestone. Ask for human approval before any third-party account writes or secrets.
+
+
+## Implementation status — 2026-10-09
+
+Version 0.3.1 implements the required CLI command targets and the permitted manual
+provider fallbacks: bounded OSM and local saved-community catalog discovery,
+bbox/point-to-point preferences, transparent deduplication/ranking, dated closure
+ranking, lossless GPX import/export, authenticated documented RWGPS read/export
+adapters, NDW direct-GML analysis, optional OSM access restrictions, saved-route
+rechecks, opt-in budgeted Google Places, and confirmed, audited, idempotent manual
+COROS handoff. Concrete provider adapters implement the typed boundaries; versioned
+schemas and the thin OpenClaw skill cover the workflows. GPX export and delivery
+both default to read-only plans and require `--confirm` to prepare local files.
+
+The acceptance matrix in `docs/spec-acceptance.md` distinguishes code verification
+from external gates. Saved community provenance is supplied by the user; no public
+community-route catalog is verified. OSM relations remain `official_trail`.
+Alert-C references remain unresolved rather than falsely decoded; NDW trail,
+future-horizon and source coverage are uncertain. Configured RWGPS credentials
+rejected by the API yield `AUTH_EXPIRED`, without exposing credentials. No paid
+Google request or authenticated RWGPS account probe was performed. COROS account
+submission, physical watch arrival and loading on a target OpenClaw host remain
+unverified. Timer/MCP and broader provider integrations are optional follow-ups.
+These limitations never silently produce fixture discoveries or claims of complete
+coverage or watch delivery. See `docs/cli-demo.md` for executed verification.
+
+
+The 0.3.1 review fixes bounded closure summaries for unlocatable nationwide records,
+rejects invalid OSM member geometry without connecting surviving coordinates, and
+quarantines legacy OSM geometry/artifacts until refreshed. Search exposes coverage
+and filter diagnostics. A permitted, attributed club-published 26.2 km gravel loop
+near Den Bosch was searched from the saved catalog, checked against live NDW/OSM
+evidence and prepared losslessly for manual COROS import. Its source flags cycling
+restrictions and its live assessment has possible conflicts and unknown coverage;
+this verifies the software workflow but does not establish a ride-ready route.
+
+## Implementation status — 2026-10-10
+
+outdoor-agent now uses the authenticated `ride` CLI as the default credential owner
+for Ride with GPS reads and GPX export through a bounded, argv-only `ride api get`
+adapter; configured key/token credentials remain an explicit alternative. `get`,
+`export` and `deliver` accept a public route URL
+(`https://ridewithgps.com/routes/<id>`), and `search --provider ridewithgps` lists
+only the authenticated account's own saved routes, with pagination, hard page/record
+bounds and a typed `RIDEWITHGPS_NO_SAVED_ROUTES` empty result. The documented-API
+`ridewithgps` provider keeps `discover_public=unsupported`, but a separate opt-in
+`ridewithgps_public` provider adds an experimental, undocumented public Explore search
+(`GET https://ridewithgps.com/explore.json`, `discover_public=degraded`, no credentials,
+not licensed). It retains source URL, author, community provenance and unpaved
+percentage; the Explore simplified polyline is never treated as navigation-complete
+geometry, and detail/export still use the authenticated documented API via the `ride`
+CLI. Explicit public route URLs and local GPX imports remain supported seeds. A
+read-only probe of the current account on 2026-10-10 returned an empty saved-route
+list, but the experimental public search found real 20-35 km gravel loops within 20 km
+of Den Bosch; the opt-in live acceptance verified one through permitted detail,
+byte-exact original GPX export and a dated closure assessment, with explicit
+suitability, geometry and closure uncertainty rather than a ride-ready
+recommendation. The offline suite passes 398 tests with the three opt-in live tests
+skipped.

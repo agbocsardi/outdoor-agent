@@ -1,0 +1,27 @@
+{
+  "elements": [
+    {
+      "type": "relation", "id": 101,
+      "tags": {"type": "route", "route": "hiking", "name": "Canal Loop", "network": "lwn"},
+      "members": [
+        {"type": "way", "ref": 11, "role": "", "geometry": [{"lat": 52.0, "lon": 5.0}, {"lat": 52.001, "lon": 5.0}]},
+        {"type": "way", "ref": 12, "role": "backward", "geometry": [{"lat": 52.0, "lon": 5.001}, {"lat": 52.001, "lon": 5.0}]},
+        {"type": "way", "ref": 13, "role": "", "geometry": [{"lat": 52.0, "lon": 5.001}, {"lat": 52.0, "lon": 5.0}]}
+      ]
+    },
+    {
+      "type": "relation", "id": 102,
+      "tags": {"type": "route", "route": "bicycle", "name": "Broken Trail"},
+      "members": [
+        {"type": "way", "ref": 21, "role": "", "geometry": [{"lat": 52.0, "lon": 5.0}, {"lat": 52.001, "lon": 5.0}]},
+        {"type": "way", "ref": 22, "role": "", "geometry": [{"lat": 52.01, "lon": 5.01}, {"lat": 52.011, "lon": 5.01}]},
+        {"type": "way", "ref": 23, "role": "", "geometry": null}
+      ]
+    },
+    {
+      "type": "relation", "id": 103,
+      "tags": {"type": "route", "route": "hiking", "name": "No Geometry"},
+      "members": [{"type": "way", "ref": 31, "role": "", "geometry": null}]
+    }
+  ]
+}

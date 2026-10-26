@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Activity": {
+      "enum": [
+        "hiking",
+        "walking",
+        "trail_running",
+        "running",
+        "road",
+        "gravel",
+        "mtb",
+        "other"
+      ],
+      "title": "Activity",
+      "type": "string"
+    },
+    "Capability": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        },
+        "checked_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checked At"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "notes"
+      ],
+      "title": "Capability",
+      "type": "object"
+    },
+    "CapabilityState": {
+      "enum": [
+        "supported",
+        "unsupported",
+        "unverified",
+        "restricted",
+        "degraded"
+      ],
+      "title": "CapabilityState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "implemented": {
+      "title": "Implemented",
+      "type": "boolean"
+    },
+    "enabled": {
+      "default": true,
+      "title": "Enabled",
+      "type": "boolean"
+    },
+    "auth_required": {
+      "title": "Auth Required",
+      "type": "boolean"
+    },
+    "activities": {
+      "items": {
+        "$ref": "#/$defs/Activity"
+      },
+      "title": "Activities",
+      "type": "array"
+    },
+    "coverage": {
+      "title": "Coverage",
+      "type": "string"
+    },
+    "capabilities": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Capability"
+      },
+      "title": "Capabilities",
+      "type": "object"
+    },
+    "notes": {
+      "title": "Notes",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider",
+    "implemented",
+    "auth_required",
+    "activities",
+    "coverage",
+    "capabilities",
+    "notes"
+  ],
+  "title": "Provider",
+  "type": "object"
+}
